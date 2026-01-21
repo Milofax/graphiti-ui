@@ -8,7 +8,6 @@ import { DashboardPage } from './pages/DashboardPage';
 import { VisualizationPage } from './pages/VisualizationPage';
 import { EntityTypesPage } from './pages/EntityTypesPage';
 import { QueryPage } from './pages/QueryPage';
-import { EpisodesPage } from './pages/EpisodesPage';
 import { ApiKeysPage } from './pages/ApiKeysPage';
 
 function App() {
@@ -27,7 +26,6 @@ function App() {
               <Route path="/visualization" element={<VisualizationPage />} />
               <Route path="/entity-types" element={<EntityTypesPage />} />
               <Route path="/query" element={<QueryPage />} />
-              <Route path="/episodes" element={<EpisodesPage />} />
               <Route path="/api-keys" element={<ApiKeysPage />} />
             </Route>
 

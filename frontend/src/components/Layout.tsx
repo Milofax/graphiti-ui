@@ -6,7 +6,6 @@ import {
   IconGraph,
   IconCategory,
   IconTerminal2,
-  IconHistory,
   IconKey,
   IconSun,
   IconMoon,
@@ -47,7 +46,6 @@ export function Layout() {
     { path: '/visualization', icon: IconGraph, label: 'Visualization' },
     { path: '/entity-types', icon: IconCategory, label: 'Entity Types' },
     { path: '/query', icon: IconTerminal2, label: 'Query' },
-    { path: '/episodes', icon: IconHistory, label: 'Episodes' },
     { path: '/api-keys', icon: IconKey, label: 'API Keys' },
   ];
 
