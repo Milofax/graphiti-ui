@@ -126,6 +126,9 @@ export function VisualizationPage() {
     linkHighlightColor: highlightColor,
   });
   const autoFitDoneRef = useRef(false);
+  const zoomTransformRef = useRef<d3.ZoomTransform>(d3.zoomIdentity);
+  const dragLineGroupRef = useRef<d3.Selection<SVGGElement, unknown, null, undefined> | null>(null);
+  const edgeDragSourceRef = useRef<Node | null>(null);
 
   // Extract unique types from visible nodes and build color map (memoized)
   const nodeTypes = useMemo(() =>
@@ -612,9 +615,14 @@ export function VisualizationPage() {
       .scaleExtent([0.1, 4])
       .on('zoom', (event) => {
         g.attr('transform', event.transform);
+        zoomTransformRef.current = event.transform;
       });
 
     svg.call(zoom);
+
+    // Create drag line group (above edges, below nodes)
+    const dragLineGroup = g.append('g').attr('class', 'drag-line');
+    dragLineGroupRef.current = dragLineGroup;
 
     // Click on background to clear selection
     svg.on('click', (event) => {
@@ -753,24 +761,88 @@ export function VisualizationPage() {
     // Create node groups
     const nodeGroup = g.append('g').attr('class', 'nodes');
 
+    // Helper to find node at position
+    const findNodeAtPosition = (x: number, y: number, exclude?: Node): Node | null => {
+      const radius = 20; // Detection radius
+      for (const n of graphData.nodes) {
+        if (n === exclude) continue;
+        const dx = (n.x || 0) - x;
+        const dy = (n.y || 0) - y;
+        if (Math.sqrt(dx * dx + dy * dy) < radius) {
+          return n;
+        }
+      }
+      return null;
+    };
+
     const node = nodeGroup.selectAll<SVGGElement, Node>('g')
       .data(graphData.nodes)
       .join('g')
       .style('cursor', 'pointer')
       .call(d3.drag<SVGGElement, Node>()
         .on('start', (event, d: any) => {
-          if (!event.active) simulation.alphaTarget(0.3).restart();
-          d.fx = d.x;
-          d.fy = d.y;
+          // Check for Shift key to enter edge creation mode
+          if (event.sourceEvent.shiftKey && selectedGroup) {
+            edgeDragSourceRef.current = d;
+            // Draw initial drag line
+            dragLineGroup.selectAll('*').remove();
+            dragLineGroup.append('line')
+              .attr('class', 'edge-drag-line')
+              .attr('x1', d.x)
+              .attr('y1', d.y)
+              .attr('x2', d.x)
+              .attr('y2', d.y)
+              .attr('stroke', highlightColor)
+              .attr('stroke-width', 2)
+              .attr('stroke-dasharray', '5,5')
+              .attr('marker-end', 'url(#arrowhead-highlight)');
+          } else {
+            // Normal drag - move node
+            if (!event.active) simulation.alphaTarget(0.3).restart();
+            d.fx = d.x;
+            d.fy = d.y;
+          }
         })
         .on('drag', (event, d: any) => {
-          d.fx = event.x;
-          d.fy = event.y;
+          if (edgeDragSourceRef.current) {
+            // Edge creation mode - update drag line
+            dragLineGroup.select('line')
+              .attr('x2', event.x)
+              .attr('y2', event.y);
+            // Highlight potential target node
+            const target = findNodeAtPosition(event.x, event.y, edgeDragSourceRef.current);
+            node.select('circle')
+              .attr('stroke', (n: Node) => n === target ? highlightColor : (isDark ? '#182433' : '#ffffff'))
+              .attr('stroke-width', (n: Node) => n === target ? 3 : 2);
+          } else {
+            // Normal drag - move node
+            d.fx = event.x;
+            d.fy = event.y;
+          }
         })
         .on('end', (event, d: any) => {
-          if (!event.active) simulation.alphaTarget(0);
-          d.fx = null;
-          d.fy = null;
+          if (edgeDragSourceRef.current) {
+            // Edge creation mode - check for target
+            const target = findNodeAtPosition(event.x, event.y, edgeDragSourceRef.current);
+            if (target) {
+              // Open edge creation modal with source and target
+              setEdgeSourceNode(edgeDragSourceRef.current);
+              setEdgeTargetNode(target);
+              setShowCreateEdgeModal(true);
+            }
+            // Clean up
+            dragLineGroup.selectAll('*').remove();
+            edgeDragSourceRef.current = null;
+            // Reset node highlighting
+            node.select('circle')
+              .attr('stroke', isDark ? '#182433' : '#ffffff')
+              .attr('stroke-width', 2);
+          } else {
+            // Normal drag - release node
+            if (!event.active) simulation.alphaTarget(0);
+            d.fx = null;
+            d.fy = null;
+          }
         }) as any);
 
     // Store node selection in ref
@@ -951,7 +1023,7 @@ export function VisualizationPage() {
     return () => {
       simulation.stop();
     };
-  }, [graphData, theme, typeColors, handleNodeClick, handleEdgeClick, clearSelection]);
+  }, [graphData, theme, typeColors, handleNodeClick, handleEdgeClick, clearSelection, selectedGroup]);
 
   // Separate effect for highlighting updates (doesn't restart simulation)
   useEffect(() => {
@@ -1036,6 +1108,11 @@ export function VisualizationPage() {
                 <option value={1000}>1000 Nodes</option>
               </select>
             </div>
+            {selectedGroup && (
+              <div className="col-auto text-muted small" title="Hold Shift and drag from one node to another to create a relationship">
+                <kbd>Shift</kbd>+Drag to link nodes
+              </div>
+            )}
             <div className="col-auto ms-auto text-secondary">
               {graphData && `${graphData.nodes.length} Nodes • ${graphData.edges.length} Edges`}
             </div>
