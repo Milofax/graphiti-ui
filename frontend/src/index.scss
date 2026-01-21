@@ -1,0 +1,52 @@
+// Inter Font - MUST be loaded before Tabler
+@import url('https://rsms.me/inter/inter.css');
+
+// Tabler Core
+@import "@tabler/core/dist/css/tabler.min.css";
+@import "@tabler/core/dist/css/tabler-vendors.min.css";
+
+// Custom styles
+:root {
+  --tblr-font-sans-serif: 'Inter var', 'Inter', -apple-system, BlinkMacSystemFont, San Francisco, Segoe UI, Roboto, Helvetica Neue, sans-serif;
+}
+
+body {
+  font-feature-settings: "cv03", "cv04", "cv11";
+}
+
+// Dark sidebar theme adjustments
+.navbar-dark {
+  background-color: #1e293b;
+}
+
+// Active nav item with blue left border
+.navbar-vertical .nav-item.active > .nav-link {
+  position: relative;
+  color: #fff;
+
+  &::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 0.25rem;
+    bottom: 0.25rem;
+    width: 3px;
+    background-color: #206bc4;
+    border-radius: 0 2px 2px 0;
+  }
+}
+
+// Ensure proper height
+html, body, #root {
+  height: 100%;
+}
+
+.page-wrapper {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.page-body {
+  flex: 1;
+}
