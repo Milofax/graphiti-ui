@@ -27,10 +27,6 @@ interface GraphData {
   edges: Edge[];
 }
 
-interface EntityType {
-  name: string;
-  description: string;
-}
 
 // Color palette for entity types
 const colorPalette = [
@@ -52,9 +48,17 @@ export function VisualizationPage() {
   const [limit, setLimit] = useState(500);
   const [groups, setGroups] = useState<string[]>([]);
   const [selectedGroup, setSelectedGroup] = useState<string>('');
-  const [entityTypes, setEntityTypes] = useState<EntityType[]>([]);
-  const [typeColors, setTypeColors] = useState<Record<string, string>>({});
   const [isDeleting, setIsDeleting] = useState(false);
+
+  // Extract unique types from visible nodes and build color map
+  const nodeTypes = graphData
+    ? [...new Set(graphData.nodes.map(n => n.type))].filter(Boolean).sort()
+    : [];
+
+  const typeColors: Record<string, string> = {};
+  nodeTypes.forEach((type, index) => {
+    typeColors[type] = colorPalette[index % colorPalette.length];
+  });
 
   const handleDeleteGraph = async () => {
     if (!selectedGroup) return;
@@ -80,26 +84,6 @@ export function VisualizationPage() {
       setIsDeleting(false);
     }
   };
-
-  // Load entity types on mount
-  useEffect(() => {
-    const fetchEntityTypes = async () => {
-      try {
-        const response = await api.get('/entity-types');
-        const types = response.data || [];
-        setEntityTypes(types);
-        // Build color map from entity types
-        const colors: Record<string, string> = {};
-        types.forEach((et: EntityType, index: number) => {
-          colors[et.name] = colorPalette[index % colorPalette.length];
-        });
-        setTypeColors(colors);
-      } catch (err) {
-        console.error('Failed to load entity types:', err);
-      }
-    };
-    fetchEntityTypes();
-  }, []);
 
   // Get color for a type
   const getTypeColor = (type: string) => typeColors[type] || defaultColor;
@@ -304,21 +288,19 @@ export function VisualizationPage() {
         <svg ref={svgRef} className="w-100 h-100" />
 
         {/* Legend */}
-        <div className="card position-absolute" style={{ top: '1rem', left: '1rem', width: 'auto', maxHeight: 'calc(100% - 2rem)', overflowY: 'auto' }}>
-          <div className="card-body py-2 px-3">
-            <h4 className="card-title mb-2">Entity Types</h4>
-            {entityTypes.length > 0 ? (
-              entityTypes.map((et) => (
-                <div key={et.name} className="d-flex align-items-center gap-2 mb-1">
-                  <span className="badge" style={{ backgroundColor: getTypeColor(et.name), width: '12px', height: '12px', padding: 0 }}></span>
-                  <small className="text-secondary">{et.name}</small>
+        {nodeTypes.length > 0 && (
+          <div className="card position-absolute" style={{ top: '1rem', left: '1rem', width: 'auto', maxHeight: 'calc(100% - 2rem)', overflowY: 'auto' }}>
+            <div className="card-body py-2 px-3">
+              <h4 className="card-title mb-2">Entity Types</h4>
+              {nodeTypes.map((type) => (
+                <div key={type} className="d-flex align-items-center gap-2 mb-1">
+                  <span className="badge" style={{ backgroundColor: getTypeColor(type), width: '12px', height: '12px', padding: 0 }}></span>
+                  <small className="text-secondary">{type}</small>
                 </div>
-              ))
-            ) : (
-              <small className="text-muted">Loading...</small>
-            )}
+              ))}
+            </div>
           </div>
-        </div>
+        )}
 
         {/* Node details */}
         {selectedNode && (
