@@ -374,6 +374,114 @@ class FalkorDBClient:
             print(f"Error getting group IDs: {e}")
             return []
 
+    def update_node(
+        self,
+        uuid: str,
+        name: str | None = None,
+        summary: str | None = None,
+        group_id: str | None = None,
+    ) -> bool:
+        """Update a node's properties.
+
+        Args:
+            uuid: Node UUID
+            name: Optional new name
+            summary: Optional new summary
+            group_id: Graph to search in (searches all if None)
+        """
+        groups = [group_id] if group_id else self.get_group_ids()
+
+        for gid in groups:
+            try:
+                params = self._get_connection_params()
+                client = FalkorDB(
+                    host=params["host"],
+                    port=params["port"],
+                    password=params["password"],
+                )
+                graph = client.select_graph(gid)
+
+                # Build SET clause dynamically
+                set_parts = []
+                if name is not None:
+                    escaped_name = name.replace("'", "\\'")
+                    set_parts.append(f"n.name = '{escaped_name}'")
+                if summary is not None:
+                    escaped_summary = summary.replace("'", "\\'")
+                    set_parts.append(f"n.summary = '{escaped_summary}'")
+
+                if not set_parts:
+                    return True  # Nothing to update
+
+                set_clause = ", ".join(set_parts)
+                query = f"""
+                MATCH (n:Entity {{uuid: '{uuid}'}})
+                SET {set_clause}
+                RETURN n.uuid
+                """
+                result = graph.query(query)
+                if result.result_set:
+                    return True
+            except Exception as e:
+                print(f"Error updating node in graph {gid}: {e}")
+                continue
+
+        return False
+
+    def update_edge(
+        self,
+        uuid: str,
+        name: str | None = None,
+        fact: str | None = None,
+        group_id: str | None = None,
+    ) -> bool:
+        """Update an edge's properties.
+
+        Args:
+            uuid: Edge UUID
+            name: Optional new relationship name/type
+            fact: Optional new fact description
+            group_id: Graph to search in (searches all if None)
+        """
+        groups = [group_id] if group_id else self.get_group_ids()
+
+        for gid in groups:
+            try:
+                params = self._get_connection_params()
+                client = FalkorDB(
+                    host=params["host"],
+                    port=params["port"],
+                    password=params["password"],
+                )
+                graph = client.select_graph(gid)
+
+                # Build SET clause dynamically
+                set_parts = []
+                if name is not None:
+                    escaped_name = name.replace("'", "\\'")
+                    set_parts.append(f"r.name = '{escaped_name}'")
+                if fact is not None:
+                    escaped_fact = fact.replace("'", "\\'")
+                    set_parts.append(f"r.fact = '{escaped_fact}'")
+
+                if not set_parts:
+                    return True  # Nothing to update
+
+                set_clause = ", ".join(set_parts)
+                query = f"""
+                MATCH ()-[r {{uuid: '{uuid}'}}]->()
+                SET {set_clause}
+                RETURN r.uuid
+                """
+                result = graph.query(query)
+                if result.result_set:
+                    return True
+            except Exception as e:
+                print(f"Error updating edge in graph {gid}: {e}")
+                continue
+
+        return False
+
 
 # Global client instance
 _client: FalkorDBClient | None = None

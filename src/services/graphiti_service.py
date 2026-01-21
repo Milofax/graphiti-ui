@@ -146,6 +146,53 @@ class GraphitiClient:
         """
         return await self.call_tool("delete_episode", {"episode_uuid": episode_uuid})
 
+    async def add_episode(
+        self,
+        name: str,
+        content: str,
+        source: str = "text",
+        source_description: str = "",
+        group_id: str | None = None,
+    ) -> dict:
+        """Add an episode to create nodes/edges with embeddings.
+
+        This is used for manual graph editing - the episode content describes
+        what entity or relationship to create, and Graphiti extracts it.
+
+        Args:
+            name: Name/title of the episode
+            content: Episode body text describing entities/relationships
+            source: Source type (default "text")
+            source_description: Description of where this came from
+            group_id: Graph/group to add to
+        """
+        arguments = {
+            "name": name,
+            "episode_body": content,
+            "source": source,
+            "source_description": source_description,
+        }
+        if group_id:
+            arguments["group_id"] = group_id
+
+        return await self.call_tool("add_episode", arguments)
+
+    async def delete_entity_node(self, uuid: str) -> dict:
+        """Delete an entity node from the knowledge graph.
+
+        Args:
+            uuid: UUID of the entity to delete
+        """
+        return await self.call_tool("delete_entity_node", {"uuid": uuid})
+
+    async def delete_entity_edge(self, uuid: str) -> dict:
+        """Delete an entity edge (relationship) from the knowledge graph.
+
+        Args:
+            uuid: UUID of the edge to delete
+        """
+        return await self.call_tool("delete_entity_edge", {"uuid": uuid})
+
 
 # Global client instance
 _client: GraphitiClient | None = None

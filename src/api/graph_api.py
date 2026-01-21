@@ -5,6 +5,7 @@ from pydantic import BaseModel
 
 from ..auth.dependencies import CurrentUser
 from ..services.falkordb_service import get_falkordb_client
+from ..services.graphiti_service import get_graphiti_client
 
 router = APIRouter()
 
@@ -282,3 +283,203 @@ async def get_graph_stats(current_user: CurrentUser) -> dict:
 
     except Exception as e:
         return {"success": False, "error": str(e), "stats": {}}
+
+
+# ============================================
+# Graph Editor Endpoints
+# ============================================
+
+
+class CreateNodeRequest(BaseModel):
+    """Request to create a new node via episode."""
+
+    name: str
+    entity_type: str = "Entity"
+    summary: str = ""
+    group_id: str
+
+
+class CreateEdgeRequest(BaseModel):
+    """Request to create a new edge via episode."""
+
+    source_name: str
+    target_name: str
+    relationship_type: str
+    fact: str = ""
+    group_id: str
+
+
+class UpdateNodeRequest(BaseModel):
+    """Request to update a node."""
+
+    name: str | None = None
+    summary: str | None = None
+    group_id: str | None = None
+
+
+class UpdateEdgeRequest(BaseModel):
+    """Request to update an edge."""
+
+    name: str | None = None
+    fact: str | None = None
+    group_id: str | None = None
+
+
+@router.post("/node")
+async def create_node(request: CreateNodeRequest, current_user: CurrentUser) -> dict:
+    """Create a new node via add_episode.
+
+    Uses the MCP add_episode tool to create an entity. The LLM will extract
+    the entity from the episode content and create proper embeddings.
+    """
+    try:
+        graphiti = get_graphiti_client()
+
+        # Craft episode content that describes the entity
+        entity_type_text = f"({request.entity_type})" if request.entity_type != "Entity" else ""
+        episode_content = f"New entity: {request.name} {entity_type_text}."
+        if request.summary:
+            episode_content += f" Description: {request.summary}"
+
+        result = await graphiti.add_episode(
+            name=f"Manual: Create Entity '{request.name}'",
+            content=episode_content,
+            source="text",
+            source_description="Manual graph edit via UI",
+            group_id=request.group_id,
+        )
+
+        if result.get("success"):
+            return {
+                "success": True,
+                "message": f"Entity '{request.name}' creation initiated",
+                "data": result.get("data"),
+            }
+        return {"success": False, "error": result.get("error", "Unknown error")}
+
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@router.post("/edge")
+async def create_edge(request: CreateEdgeRequest, current_user: CurrentUser) -> dict:
+    """Create a new edge via add_episode.
+
+    Uses the MCP add_episode tool to create a relationship. The LLM will extract
+    the relationship from the episode content and create proper embeddings.
+    """
+    try:
+        graphiti = get_graphiti_client()
+
+        # Craft episode content that describes the relationship
+        episode_content = f"{request.source_name} {request.relationship_type} {request.target_name}."
+        if request.fact:
+            episode_content += f" {request.fact}"
+
+        result = await graphiti.add_episode(
+            name=f"Manual: Create Relationship '{request.source_name}' -> '{request.target_name}'",
+            content=episode_content,
+            source="text",
+            source_description="Manual graph edit via UI",
+            group_id=request.group_id,
+        )
+
+        if result.get("success"):
+            return {
+                "success": True,
+                "message": f"Relationship '{request.relationship_type}' creation initiated",
+                "data": result.get("data"),
+            }
+        return {"success": False, "error": result.get("error", "Unknown error")}
+
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@router.put("/node/{uuid}")
+async def update_node(uuid: str, request: UpdateNodeRequest, current_user: CurrentUser) -> dict:
+    """Update a node's properties directly in FalkorDB.
+
+    Note: This updates the node but does NOT regenerate embeddings.
+    For significant content changes, consider creating a new node via episode.
+    """
+    try:
+        client = get_falkordb_client()
+        success = client.update_node(
+            uuid=uuid,
+            name=request.name,
+            summary=request.summary,
+            group_id=request.group_id,
+        )
+
+        if success:
+            return {"success": True, "message": "Node updated successfully"}
+        return {"success": False, "error": "Node not found or update failed"}
+
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@router.put("/edge/{uuid}")
+async def update_edge(uuid: str, request: UpdateEdgeRequest, current_user: CurrentUser) -> dict:
+    """Update an edge's properties directly in FalkorDB.
+
+    Note: This updates the edge but does NOT regenerate embeddings.
+    For significant content changes, consider creating a new edge via episode.
+    """
+    try:
+        client = get_falkordb_client()
+        success = client.update_edge(
+            uuid=uuid,
+            name=request.name,
+            fact=request.fact,
+            group_id=request.group_id,
+        )
+
+        if success:
+            return {"success": True, "message": "Edge updated successfully"}
+        return {"success": False, "error": "Edge not found or update failed"}
+
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@router.delete("/node/{uuid}")
+async def delete_node(uuid: str, current_user: CurrentUser) -> dict:
+    """Delete a node via MCP delete_entity_node tool.
+
+    This removes the entity and all connected edges from the graph.
+    """
+    try:
+        graphiti = get_graphiti_client()
+        result = await graphiti.delete_entity_node(uuid)
+
+        if result.get("success"):
+            return {
+                "success": True,
+                "message": "Node deleted successfully",
+                "data": result.get("data"),
+            }
+        return {"success": False, "error": result.get("error", "Unknown error")}
+
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@router.delete("/edge/{uuid}")
+async def delete_edge(uuid: str, current_user: CurrentUser) -> dict:
+    """Delete an edge via MCP delete_entity_edge tool."""
+    try:
+        graphiti = get_graphiti_client()
+        result = await graphiti.delete_entity_edge(uuid)
+
+        if result.get("success"):
+            return {
+                "success": True,
+                "message": "Edge deleted successfully",
+                "data": result.get("data"),
+            }
+        return {"success": False, "error": result.get("error", "Unknown error")}
+
+    except Exception as e:
+        return {"success": False, "error": str(e)}

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import * as d3 from 'd3';
 import { api } from '../api/client';
 import { useTheme } from '../contexts/ThemeContext';
-import { IconRefresh, IconTrash } from '@tabler/icons-react';
+import { IconRefresh, IconTrash, IconPlus, IconEdit, IconX, IconCheck, IconTrashX } from '@tabler/icons-react';
 
 interface Node {
   id: string;
@@ -93,6 +93,28 @@ export function VisualizationPage() {
   const [expandedEpisode, setExpandedEpisode] = useState<string | null>(null);
   const isResizingRef = useRef(false);
   const processedEdgesRef = useRef<Edge[]>([]);
+
+  // Graph Editor state
+  const [showCreateNodeModal, setShowCreateNodeModal] = useState(false);
+  const [showCreateEdgeModal, setShowCreateEdgeModal] = useState(false);
+  const [isEditingNode, setIsEditingNode] = useState(false);
+  const [isEditingEdge, setIsEditingEdge] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [edgeSourceNode, setEdgeSourceNode] = useState<Node | null>(null);
+  const [edgeTargetNode, setEdgeTargetNode] = useState<Node | null>(null);
+
+  // Form state for modals
+  const [newNodeName, setNewNodeName] = useState('');
+  const [newNodeType, setNewNodeType] = useState('');
+  const [newNodeSummary, setNewNodeSummary] = useState('');
+  const [newEdgeType, setNewEdgeType] = useState('');
+  const [newEdgeFact, setNewEdgeFact] = useState('');
+
+  // Edit form state
+  const [editNodeName, setEditNodeName] = useState('');
+  const [editNodeSummary, setEditNodeSummary] = useState('');
+  const [editEdgeName, setEditEdgeName] = useState('');
+  const [editEdgeFact, setEditEdgeFact] = useState('');
 
   // Refs for D3 selections to update highlighting without re-running simulation
   const nodeSelectionRef = useRef<d3.Selection<SVGGElement, Node, SVGGElement, unknown> | null>(null);
@@ -316,6 +338,207 @@ export function VisualizationPage() {
       });
     }
   }, [loadedEpisodes, loadingEpisodes, expandedEpisode]);
+
+  // ============================================
+  // Graph Editor Handlers
+  // ============================================
+
+  const refreshGraph = useCallback(() => {
+    // Trigger data reload by changing limit (a simple way to force refresh)
+    setLimit(prev => prev);
+  }, []);
+
+  const handleCreateNode = async () => {
+    if (!newNodeName.trim() || !selectedGroup) {
+      alert('Please enter a node name and select a group');
+      return;
+    }
+
+    setIsSaving(true);
+    try {
+      const response = await api.post('/graph/node', {
+        name: newNodeName.trim(),
+        entity_type: newNodeType.trim() || 'Entity',
+        summary: newNodeSummary.trim(),
+        group_id: selectedGroup,
+      });
+
+      if (response.data.success) {
+        setShowCreateNodeModal(false);
+        setNewNodeName('');
+        setNewNodeType('');
+        setNewNodeSummary('');
+        // Refresh graph after short delay to allow episode processing
+        setTimeout(refreshGraph, 1500);
+      } else {
+        alert(`Failed to create node: ${response.data.error}`);
+      }
+    } catch (err: any) {
+      alert(`Error creating node: ${err.message}`);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleCreateEdge = async () => {
+    if (!edgeSourceNode || !edgeTargetNode || !newEdgeType.trim() || !selectedGroup) {
+      alert('Please select source/target nodes, enter relationship type, and select a group');
+      return;
+    }
+
+    setIsSaving(true);
+    try {
+      const response = await api.post('/graph/edge', {
+        source_name: edgeSourceNode.name,
+        target_name: edgeTargetNode.name,
+        relationship_type: newEdgeType.trim().toUpperCase().replace(/\s+/g, '_'),
+        fact: newEdgeFact.trim(),
+        group_id: selectedGroup,
+      });
+
+      if (response.data.success) {
+        setShowCreateEdgeModal(false);
+        setEdgeSourceNode(null);
+        setEdgeTargetNode(null);
+        setNewEdgeType('');
+        setNewEdgeFact('');
+        // Refresh graph after short delay to allow episode processing
+        setTimeout(refreshGraph, 1500);
+      } else {
+        alert(`Failed to create edge: ${response.data.error}`);
+      }
+    } catch (err: any) {
+      alert(`Error creating edge: ${err.message}`);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const startEditingNode = () => {
+    if (!selectedNode) return;
+    setEditNodeName(selectedNode.name || '');
+    setEditNodeSummary(selectedNode.summary || '');
+    setIsEditingNode(true);
+  };
+
+  const cancelEditingNode = () => {
+    setIsEditingNode(false);
+    setEditNodeName('');
+    setEditNodeSummary('');
+  };
+
+  const handleUpdateNode = async () => {
+    if (!selectedNode) return;
+
+    setIsSaving(true);
+    try {
+      const response = await api.put(`/graph/node/${selectedNode.id}`, {
+        name: editNodeName.trim() || null,
+        summary: editNodeSummary.trim() || null,
+        group_id: selectedNode.group_id,
+      });
+
+      if (response.data.success) {
+        setIsEditingNode(false);
+        refreshGraph();
+      } else {
+        alert(`Failed to update node: ${response.data.error}`);
+      }
+    } catch (err: any) {
+      alert(`Error updating node: ${err.message}`);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleDeleteNode = async () => {
+    if (!selectedNode) return;
+    if (!confirm(`Delete node "${selectedNode.name}"?\n\nThis will also remove all connected relationships.`)) {
+      return;
+    }
+
+    setIsSaving(true);
+    try {
+      const response = await api.delete(`/graph/node/${selectedNode.id}`);
+
+      if (response.data.success) {
+        clearSelection();
+        refreshGraph();
+      } else {
+        alert(`Failed to delete node: ${response.data.error}`);
+      }
+    } catch (err: any) {
+      alert(`Error deleting node: ${err.message}`);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const startEditingEdge = () => {
+    if (!selectedEdge) return;
+    setEditEdgeName(selectedEdge.type || '');
+    setEditEdgeFact(selectedEdge.fact || '');
+    setIsEditingEdge(true);
+  };
+
+  const cancelEditingEdge = () => {
+    setIsEditingEdge(false);
+    setEditEdgeName('');
+    setEditEdgeFact('');
+  };
+
+  const handleUpdateEdge = async () => {
+    if (!selectedEdge || !selectedEdge.uuid) return;
+
+    setIsSaving(true);
+    try {
+      const response = await api.put(`/graph/edge/${selectedEdge.uuid}`, {
+        name: editEdgeName.trim() || null,
+        fact: editEdgeFact.trim() || null,
+      });
+
+      if (response.data.success) {
+        setIsEditingEdge(false);
+        refreshGraph();
+      } else {
+        alert(`Failed to update edge: ${response.data.error}`);
+      }
+    } catch (err: any) {
+      alert(`Error updating edge: ${err.message}`);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleDeleteEdge = async () => {
+    if (!selectedEdge || !selectedEdge.uuid) return;
+    if (!confirm(`Delete relationship "${formatEdgeType(selectedEdge.type)}"?`)) {
+      return;
+    }
+
+    setIsSaving(true);
+    try {
+      const response = await api.delete(`/graph/edge/${selectedEdge.uuid}`);
+
+      if (response.data.success) {
+        clearSelection();
+        refreshGraph();
+      } else {
+        alert(`Failed to delete edge: ${response.data.error}`);
+      }
+    } catch (err: any) {
+      alert(`Error deleting edge: ${err.message}`);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  // Open edge creation modal with source node
+  const openEdgeCreationFromNode = (sourceNode: Node) => {
+    setEdgeSourceNode(sourceNode);
+    setEdgeTargetNode(null);
+    setShowCreateEdgeModal(true);
+  };
 
   // Panel resize handlers
   const handleResizeStart = useCallback((e: React.MouseEvent) => {
@@ -766,6 +989,17 @@ export function VisualizationPage() {
         <div className="card-body py-2">
           <div className="row align-items-center">
             <div className="col-auto">
+              <button
+                onClick={() => setShowCreateNodeModal(true)}
+                disabled={!selectedGroup}
+                className="btn btn-sm btn-primary"
+                title={selectedGroup ? 'Create new entity' : 'Select a group first'}
+              >
+                <IconPlus size={16} className="me-1" />
+                Node
+              </button>
+            </div>
+            <div className="col-auto border-start ps-3">
               <select
                 value={selectedGroup}
                 onChange={e => setSelectedGroup(e.target.value)}
@@ -870,33 +1104,98 @@ export function VisualizationPage() {
               }}
               title="Drag to resize"
             />
-            <div className="card-header d-flex align-items-center">
+            <div className="card-header d-flex align-items-center gap-2">
               <h4 className="card-title mb-0">Node Details</h4>
+              {!isEditingNode && (
+                <>
+                  <button
+                    className="btn btn-sm btn-ghost-primary ms-auto"
+                    onClick={startEditingNode}
+                    title="Edit node"
+                  >
+                    <IconEdit size={16} />
+                  </button>
+                  <button
+                    className="btn btn-sm btn-ghost-danger"
+                    onClick={handleDeleteNode}
+                    disabled={isSaving}
+                    title="Delete node"
+                  >
+                    <IconTrashX size={16} />
+                  </button>
+                </>
+              )}
               <button
-                className="btn btn-close ms-auto"
-                onClick={clearSelection}
+                className={`btn btn-close ${isEditingNode ? 'ms-auto' : ''}`}
+                onClick={() => {
+                  if (isEditingNode) cancelEditingNode();
+                  else clearSelection();
+                }}
               />
             </div>
             <div className="card-body" style={{ overflowY: 'auto', flex: 1 }}>
-              <h3 className="mb-2" style={{ wordBreak: 'break-word' }}>{selectedNode.name || 'Unknown'}</h3>
-              <div className="mb-3 d-flex flex-wrap gap-1">
-                <span
-                  className="badge"
-                  style={{ backgroundColor: getTypeColor(selectedNode.type), color: 'white' }}
-                >
-                  {selectedNode.type}
-                </span>
-                {selectedNode.labels?.filter(l => l !== 'Entity' && l !== selectedNode.type).map(label => (
-                  <span key={label} className="badge bg-secondary text-white">{label}</span>
-                ))}
-              </div>
+              {isEditingNode ? (
+                /* Edit Mode */
+                <>
+                  <div className="mb-3">
+                    <label className="form-label">Name</label>
+                    <input
+                      type="text"
+                      className="form-control"
+                      value={editNodeName}
+                      onChange={e => setEditNodeName(e.target.value)}
+                    />
+                  </div>
+                  <div className="mb-3">
+                    <label className="form-label">Summary</label>
+                    <textarea
+                      className="form-control"
+                      rows={3}
+                      value={editNodeSummary}
+                      onChange={e => setEditNodeSummary(e.target.value)}
+                    />
+                  </div>
+                  <div className="d-flex gap-2">
+                    <button
+                      className="btn btn-primary"
+                      onClick={handleUpdateNode}
+                      disabled={isSaving}
+                    >
+                      <IconCheck size={16} className="me-1" />
+                      {isSaving ? 'Saving...' : 'Save'}
+                    </button>
+                    <button
+                      className="btn btn-secondary"
+                      onClick={cancelEditingNode}
+                      disabled={isSaving}
+                    >
+                      <IconX size={16} className="me-1" />
+                      Cancel
+                    </button>
+                  </div>
+                </>
+              ) : (
+                /* View Mode */
+                <>
+                  <h3 className="mb-2" style={{ wordBreak: 'break-word' }}>{selectedNode.name || 'Unknown'}</h3>
+                  <div className="mb-3 d-flex flex-wrap gap-1">
+                    <span
+                      className="badge"
+                      style={{ backgroundColor: getTypeColor(selectedNode.type), color: 'white' }}
+                    >
+                      {selectedNode.type}
+                    </span>
+                    {selectedNode.labels?.filter(l => l !== 'Entity' && l !== selectedNode.type).map(label => (
+                      <span key={label} className="badge bg-secondary text-white">{label}</span>
+                    ))}
+                  </div>
 
-              {selectedNode.summary && (
-                <div className="mb-3">
-                  <label className="form-label text-muted small mb-1">Summary</label>
-                  <p className="mb-0 small">{selectedNode.summary}</p>
-                </div>
-              )}
+                  {selectedNode.summary && (
+                    <div className="mb-3">
+                      <label className="form-label text-muted small mb-1">Summary</label>
+                      <p className="mb-0 small">{selectedNode.summary}</p>
+                    </div>
+                  )}
 
               {(selectedNode.id || selectedNode.group_id || selectedNode.created_at) && (
                 <div className="mb-3">
@@ -948,7 +1247,7 @@ export function VisualizationPage() {
 
               {/* Connected Relationships */}
               {getConnectedEdges(selectedNode).length > 0 && (
-                <div>
+                <div className="mb-3">
                   <label className="form-label text-muted small mb-1">
                     Relationships ({getConnectedEdges(selectedNode).length})
                   </label>
@@ -999,6 +1298,20 @@ export function VisualizationPage() {
                   </div>
                 </div>
               )}
+
+              {/* Add Edge Button */}
+              <div className="mt-3 pt-3 border-top">
+                <button
+                  className="btn btn-sm btn-outline-primary w-100"
+                  onClick={() => openEdgeCreationFromNode(selectedNode)}
+                  disabled={!selectedGroup}
+                >
+                  <IconPlus size={16} className="me-1" />
+                  Add Relationship
+                </button>
+              </div>
+                </>
+              )}
             </div>
           </div>
         )}
@@ -1020,11 +1333,33 @@ export function VisualizationPage() {
               }}
               title="Drag to resize"
             />
-            <div className="card-header d-flex align-items-center">
+            <div className="card-header d-flex align-items-center gap-2">
               <h4 className="card-title mb-0">Relationship Details</h4>
+              {!isEditingEdge && (
+                <>
+                  <button
+                    className="btn btn-sm btn-ghost-primary ms-auto"
+                    onClick={startEditingEdge}
+                    title="Edit relationship"
+                  >
+                    <IconEdit size={16} />
+                  </button>
+                  <button
+                    className="btn btn-sm btn-ghost-danger"
+                    onClick={handleDeleteEdge}
+                    disabled={isSaving}
+                    title="Delete relationship"
+                  >
+                    <IconTrashX size={16} />
+                  </button>
+                </>
+              )}
               <button
-                className="btn btn-close ms-auto"
-                onClick={clearSelection}
+                className={`btn btn-close ${isEditingEdge ? 'ms-auto' : ''}`}
+                onClick={() => {
+                  if (isEditingEdge) cancelEditingEdge();
+                  else clearSelection();
+                }}
               />
             </div>
             <div className="card-body" style={{ overflowY: 'auto', flex: 1 }}>
@@ -1051,18 +1386,64 @@ export function VisualizationPage() {
                 </span>
               </div>
 
-              <div className="mb-3">
-                <label className="form-label text-muted small mb-1">Relationship Type</label>
-                <p className="mb-0">{formatEdgeType(selectedEdge.type)}</p>
-                <code className="small text-muted">{selectedEdge.type}</code>
-              </div>
+              {isEditingEdge ? (
+                /* Edit Mode */
+                <>
+                  <div className="mb-3">
+                    <label className="form-label">Relationship Type</label>
+                    <input
+                      type="text"
+                      className="form-control"
+                      value={editEdgeName}
+                      onChange={e => setEditEdgeName(e.target.value)}
+                      placeholder="WORKS_FOR, KNOWS, etc."
+                    />
+                    <small className="text-muted">This updates the relationship name (stored as uppercase)</small>
+                  </div>
+                  <div className="mb-3">
+                    <label className="form-label">Fact Description</label>
+                    <textarea
+                      className="form-control"
+                      rows={3}
+                      value={editEdgeFact}
+                      onChange={e => setEditEdgeFact(e.target.value)}
+                      placeholder="Description of this relationship..."
+                    />
+                  </div>
+                  <div className="d-flex gap-2">
+                    <button
+                      className="btn btn-primary"
+                      onClick={handleUpdateEdge}
+                      disabled={isSaving}
+                    >
+                      <IconCheck size={16} className="me-1" />
+                      {isSaving ? 'Saving...' : 'Save'}
+                    </button>
+                    <button
+                      className="btn btn-secondary"
+                      onClick={cancelEditingEdge}
+                      disabled={isSaving}
+                    >
+                      <IconX size={16} className="me-1" />
+                      Cancel
+                    </button>
+                  </div>
+                </>
+              ) : (
+                /* View Mode */
+                <>
+                  <div className="mb-3">
+                    <label className="form-label text-muted small mb-1">Relationship Type</label>
+                    <p className="mb-0">{formatEdgeType(selectedEdge.type)}</p>
+                    <code className="small text-muted">{selectedEdge.type}</code>
+                  </div>
 
-              {selectedEdge.fact && (
-                <div className="mb-3">
-                  <label className="form-label text-muted small mb-1">Fact</label>
-                  <p className="mb-0 small">{selectedEdge.fact}</p>
-                </div>
-              )}
+                  {selectedEdge.fact && (
+                    <div className="mb-3">
+                      <label className="form-label text-muted small mb-1">Fact</label>
+                      <p className="mb-0 small">{selectedEdge.fact}</p>
+                    </div>
+                  )}
 
               {/* Structured Metadata */}
               <div className="mb-3">
@@ -1153,10 +1534,193 @@ export function VisualizationPage() {
                   </div>
                 </div>
               )}
+                </>
+              )}
             </div>
           </div>
         )}
       </div>
+
+      {/* Create Node Modal */}
+      {showCreateNodeModal && (
+        <div className="modal modal-blur fade show d-block" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
+          <div className="modal-dialog modal-dialog-centered">
+            <div className="modal-content">
+              <div className="modal-header">
+                <h5 className="modal-title">Create New Entity</h5>
+                <button type="button" className="btn-close" onClick={() => setShowCreateNodeModal(false)} />
+              </div>
+              <div className="modal-body">
+                <div className="mb-3">
+                  <label className="form-label required">Name</label>
+                  <input
+                    type="text"
+                    className="form-control"
+                    value={newNodeName}
+                    onChange={e => setNewNodeName(e.target.value)}
+                    placeholder="Entity name"
+                    autoFocus
+                  />
+                </div>
+                <div className="mb-3">
+                  <label className="form-label">Type</label>
+                  <input
+                    type="text"
+                    className="form-control"
+                    value={newNodeType}
+                    onChange={e => setNewNodeType(e.target.value)}
+                    placeholder="Person, Organization, etc."
+                  />
+                  <small className="text-muted">Leave empty for default "Entity" type</small>
+                </div>
+                <div className="mb-3">
+                  <label className="form-label">Summary</label>
+                  <textarea
+                    className="form-control"
+                    rows={3}
+                    value={newNodeSummary}
+                    onChange={e => setNewNodeSummary(e.target.value)}
+                    placeholder="Description of this entity..."
+                  />
+                </div>
+                <div className="mb-0">
+                  <label className="form-label">Target Graph</label>
+                  <input
+                    type="text"
+                    className="form-control"
+                    value={selectedGroup}
+                    disabled
+                  />
+                </div>
+              </div>
+              <div className="modal-footer">
+                <button type="button" className="btn btn-secondary" onClick={() => setShowCreateNodeModal(false)}>
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  onClick={handleCreateNode}
+                  disabled={isSaving || !newNodeName.trim()}
+                >
+                  {isSaving ? 'Creating...' : 'Create'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Create Edge Modal */}
+      {showCreateEdgeModal && (
+        <div className="modal modal-blur fade show d-block" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
+          <div className="modal-dialog modal-dialog-centered">
+            <div className="modal-content">
+              <div className="modal-header">
+                <h5 className="modal-title">Create Relationship</h5>
+                <button type="button" className="btn-close" onClick={() => {
+                  setShowCreateEdgeModal(false);
+                  setEdgeSourceNode(null);
+                  setEdgeTargetNode(null);
+                }} />
+              </div>
+              <div className="modal-body">
+                {/* Source/Target Visualization */}
+                <div className="d-flex align-items-center justify-content-center gap-2 mb-4 p-3 rounded" style={{ background: 'var(--tblr-bg-surface-secondary)' }}>
+                  <span
+                    className="badge text-white"
+                    style={{ backgroundColor: edgeSourceNode ? getTypeColor(edgeSourceNode.type) : '#667382' }}
+                  >
+                    {edgeSourceNode?.name || 'Select source...'}
+                  </span>
+                  <span className="text-muted">→</span>
+                  <span
+                    className="badge text-white"
+                    style={{ backgroundColor: edgeTargetNode ? getTypeColor(edgeTargetNode.type) : '#667382' }}
+                  >
+                    {edgeTargetNode?.name || 'Select target...'}
+                  </span>
+                </div>
+
+                <div className="row mb-3">
+                  <div className="col-6">
+                    <label className="form-label required">Source Node</label>
+                    <select
+                      className="form-select"
+                      value={edgeSourceNode?.id || ''}
+                      onChange={e => {
+                        const node = graphData?.nodes.find(n => n.id === e.target.value);
+                        setEdgeSourceNode(node || null);
+                      }}
+                    >
+                      <option value="">Select source...</option>
+                      {graphData?.nodes.map(n => (
+                        <option key={n.id} value={n.id}>{n.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="col-6">
+                    <label className="form-label required">Target Node</label>
+                    <select
+                      className="form-select"
+                      value={edgeTargetNode?.id || ''}
+                      onChange={e => {
+                        const node = graphData?.nodes.find(n => n.id === e.target.value);
+                        setEdgeTargetNode(node || null);
+                      }}
+                    >
+                      <option value="">Select target...</option>
+                      {graphData?.nodes.map(n => (
+                        <option key={n.id} value={n.id}>{n.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                <div className="mb-3">
+                  <label className="form-label required">Relationship Type</label>
+                  <input
+                    type="text"
+                    className="form-control"
+                    value={newEdgeType}
+                    onChange={e => setNewEdgeType(e.target.value)}
+                    placeholder="WORKS_FOR, KNOWS, LOCATED_IN, etc."
+                  />
+                  <small className="text-muted">Will be converted to UPPER_SNAKE_CASE</small>
+                </div>
+
+                <div className="mb-0">
+                  <label className="form-label">Fact Description</label>
+                  <textarea
+                    className="form-control"
+                    rows={3}
+                    value={newEdgeFact}
+                    onChange={e => setNewEdgeFact(e.target.value)}
+                    placeholder="Additional context about this relationship..."
+                  />
+                </div>
+              </div>
+              <div className="modal-footer">
+                <button type="button" className="btn btn-secondary" onClick={() => {
+                  setShowCreateEdgeModal(false);
+                  setEdgeSourceNode(null);
+                  setEdgeTargetNode(null);
+                }}>
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  onClick={handleCreateEdge}
+                  disabled={isSaving || !edgeSourceNode || !edgeTargetNode || !newEdgeType.trim()}
+                >
+                  {isSaving ? 'Creating...' : 'Create'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
