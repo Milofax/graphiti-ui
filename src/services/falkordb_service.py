@@ -361,12 +361,13 @@ class FalkorDBClient:
                 password=params["password"],
                 decode_responses=True,
             )
-            # Get all keys and filter out telemetry keys
+            # Get all keys and filter out non-graph keys
             all_keys = r.keys("*")
-            # Filter: exclude telemetry keys and known non-graph keys
+            # Filter: exclude telemetry keys, metadata keys, and known non-graph keys
             graph_names = [
                 k for k in all_keys
                 if not k.startswith("telemetry{")
+                and not k.startswith("graphiti:")  # Exclude metadata keys (entity_types, etc.)
                 and k not in ["graphiti"]  # Exclude empty default graph
             ]
             return sorted(graph_names)
