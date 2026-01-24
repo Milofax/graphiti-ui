@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import * as d3 from 'd3';
 import { api } from '../api/client';
 import { useTheme } from '../contexts/ThemeContext';
-import { IconRefresh, IconTrash, IconPlus, IconEdit, IconX, IconCheck, IconTrashX, IconAdjustments } from '@tabler/icons-react';
+import { IconRefresh, IconTrash, IconPlus, IconEdit, IconX, IconCheck, IconTrashX, IconAdjustments, IconAlertTriangle } from '@tabler/icons-react';
 
 interface Node {
   id: string;
@@ -157,6 +157,12 @@ export function VisualizationPage() {
   const [editEdgeName, setEditEdgeName] = useState('');
   const [editEdgeFact, setEditEdgeFact] = useState('');
 
+  // Confirmation/Alert modal state
+  const [showDeleteGraphConfirm, setShowDeleteGraphConfirm] = useState(false);
+  const [showDeleteNodeConfirm, setShowDeleteNodeConfirm] = useState(false);
+  const [showDeleteEdgeConfirm, setShowDeleteEdgeConfirm] = useState(false);
+  const [alertMessage, setAlertMessage] = useState<{ type: 'error' | 'success' | 'info'; title: string; message: string } | null>(null);
+
   // Refs for D3 selections to update highlighting without re-running simulation
   const nodeSelectionRef = useRef<d3.Selection<SVGGElement, Node, SVGGElement, unknown> | null>(null);
   const linkSelectionRef = useRef<d3.Selection<SVGPathElement, Edge, SVGGElement, unknown> | null>(null);
@@ -189,9 +195,11 @@ export function VisualizationPage() {
 
   const handleDeleteGraph = async () => {
     if (!selectedGroup) return;
-    if (!confirm(`Are you sure you want to delete the graph "${selectedGroup}"?\n\nThis will permanently delete all nodes and edges in this graph.`)) {
-      return;
-    }
+    setShowDeleteGraphConfirm(true);
+  };
+
+  const confirmDeleteGraph = async () => {
+    if (!selectedGroup) return;
 
     setIsDeleting(true);
     try {
@@ -199,12 +207,12 @@ export function VisualizationPage() {
       if (response.data.success) {
         setGroups(groups.filter(g => g !== selectedGroup));
         setSelectedGroup('');
-        setLimit(prev => prev);
+        setShowDeleteGraphConfirm(false);
       } else {
-        alert(`Failed to delete graph: ${response.data.error}`);
+        setAlertMessage({ type: 'error', title: 'Delete Failed', message: response.data.error });
       }
     } catch (err: any) {
-      alert(`Error deleting graph: ${err.message}`);
+      setAlertMessage({ type: 'error', title: 'Error', message: err.message });
     } finally {
       setIsDeleting(false);
     }
@@ -440,7 +448,7 @@ export function VisualizationPage() {
 
   const handleCreateNode = async () => {
     if (!newNodeName.trim() || !selectedGroup) {
-      alert('Please enter a node name and select a group');
+      setAlertMessage({ type: 'error', title: 'Missing Data', message: 'Please enter a node name and select a group' });
       return;
     }
 
@@ -464,10 +472,10 @@ export function VisualizationPage() {
         // Refresh graph after short delay to allow episode processing
         setTimeout(refreshGraph, 1500);
       } else {
-        alert(`Failed to create node: ${response.data.error}`);
+        setAlertMessage({ type: 'error', title: 'Create Failed', message: response.data.error });
       }
     } catch (err: any) {
-      alert(`Error creating node: ${err.message}`);
+      setAlertMessage({ type: 'error', title: 'Error', message: err.message });
     } finally {
       setIsSaving(false);
     }
@@ -475,7 +483,7 @@ export function VisualizationPage() {
 
   const handleCreateEdge = async () => {
     if (!edgeSourceNode || !edgeTargetNode || !newEdgeType.trim() || !selectedGroup) {
-      alert('Please select source/target nodes, enter relationship type, and select a group');
+      setAlertMessage({ type: 'error', title: 'Missing Data', message: 'Please select source/target nodes, enter relationship type, and select a group' });
       return;
     }
 
@@ -498,10 +506,10 @@ export function VisualizationPage() {
         // Refresh graph after short delay to allow episode processing
         setTimeout(refreshGraph, 1500);
       } else {
-        alert(`Failed to create edge: ${response.data.error}`);
+        setAlertMessage({ type: 'error', title: 'Create Failed', message: response.data.error });
       }
     } catch (err: any) {
-      alert(`Error creating edge: ${err.message}`);
+      setAlertMessage({ type: 'error', title: 'Error', message: err.message });
     } finally {
       setIsSaving(false);
     }
@@ -554,10 +562,10 @@ export function VisualizationPage() {
         setEditNodeAttributes({});
         refreshGraph();
       } else {
-        alert(`Failed to update node: ${response.data.error}`);
+        setAlertMessage({ type: 'error', title: 'Update Failed', message: response.data.error });
       }
     } catch (err: any) {
-      alert(`Error updating node: ${err.message}`);
+      setAlertMessage({ type: 'error', title: 'Error', message: err.message });
     } finally {
       setIsSaving(false);
     }
@@ -565,22 +573,25 @@ export function VisualizationPage() {
 
   const handleDeleteNode = async () => {
     if (!selectedNode) return;
-    if (!confirm(`Delete node "${selectedNode.name}"?\n\nThis will also remove all connected relationships.`)) {
-      return;
-    }
+    setShowDeleteNodeConfirm(true);
+  };
+
+  const confirmDeleteNode = async () => {
+    if (!selectedNode) return;
 
     setIsSaving(true);
     try {
       const response = await api.delete(`/graph/node/${selectedNode.id}`);
 
       if (response.data.success) {
+        setShowDeleteNodeConfirm(false);
         clearSelection();
         refreshGraph();
       } else {
-        alert(`Failed to delete node: ${response.data.error}`);
+        setAlertMessage({ type: 'error', title: 'Delete Failed', message: response.data.error });
       }
     } catch (err: any) {
-      alert(`Error deleting node: ${err.message}`);
+      setAlertMessage({ type: 'error', title: 'Error', message: err.message });
     } finally {
       setIsSaving(false);
     }
@@ -613,10 +624,10 @@ export function VisualizationPage() {
         setIsEditingEdge(false);
         refreshGraph();
       } else {
-        alert(`Failed to update edge: ${response.data.error}`);
+        setAlertMessage({ type: 'error', title: 'Update Failed', message: response.data.error });
       }
     } catch (err: any) {
-      alert(`Error updating edge: ${err.message}`);
+      setAlertMessage({ type: 'error', title: 'Error', message: err.message });
     } finally {
       setIsSaving(false);
     }
@@ -624,22 +635,25 @@ export function VisualizationPage() {
 
   const handleDeleteEdge = async () => {
     if (!selectedEdge || !selectedEdge.uuid) return;
-    if (!confirm(`Delete relationship "${formatEdgeType(selectedEdge.type)}"?`)) {
-      return;
-    }
+    setShowDeleteEdgeConfirm(true);
+  };
+
+  const confirmDeleteEdge = async () => {
+    if (!selectedEdge || !selectedEdge.uuid) return;
 
     setIsSaving(true);
     try {
       const response = await api.delete(`/graph/edge/${selectedEdge.uuid}`);
 
       if (response.data.success) {
+        setShowDeleteEdgeConfirm(false);
         clearSelection();
         refreshGraph();
       } else {
-        alert(`Failed to delete edge: ${response.data.error}`);
+        setAlertMessage({ type: 'error', title: 'Delete Failed', message: response.data.error });
       }
     } catch (err: any) {
-      alert(`Error deleting edge: ${err.message}`);
+      setAlertMessage({ type: 'error', title: 'Error', message: err.message });
     } finally {
       setIsSaving(false);
     }
@@ -2201,6 +2215,133 @@ export function VisualizationPage() {
                   disabled={isSaving || !edgeSourceNode || !edgeTargetNode || !newEdgeType.trim()}
                 >
                   {isSaving ? 'Creating...' : 'Create'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Graph Confirmation Modal */}
+      {showDeleteGraphConfirm && (
+        <div className="modal modal-blur show d-block" tabIndex={-1} style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
+          <div className="modal-dialog modal-sm modal-dialog-centered">
+            <div className="modal-content">
+              <div className="modal-status bg-danger" />
+              <div className="modal-body text-center py-4">
+                <IconAlertTriangle size={48} className="text-danger mb-3" />
+                <h3>Delete Graph?</h3>
+                <div className="text-secondary">
+                  Are you sure you want to delete <strong>"{selectedGroup}"</strong>?
+                  <br /><br />
+                  This will permanently delete all nodes and edges in this graph.
+                </div>
+              </div>
+              <div className="modal-footer">
+                <div className="w-100">
+                  <div className="row">
+                    <div className="col">
+                      <button className="btn w-100" onClick={() => setShowDeleteGraphConfirm(false)} disabled={isDeleting}>
+                        Cancel
+                      </button>
+                    </div>
+                    <div className="col">
+                      <button className="btn btn-danger w-100" onClick={confirmDeleteGraph} disabled={isDeleting}>
+                        {isDeleting ? <><span className="spinner-border spinner-border-sm me-2" />Deleting...</> : 'Yes, Delete'}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Node Confirmation Modal */}
+      {showDeleteNodeConfirm && selectedNode && (
+        <div className="modal modal-blur show d-block" tabIndex={-1} style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
+          <div className="modal-dialog modal-sm modal-dialog-centered">
+            <div className="modal-content">
+              <div className="modal-status bg-danger" />
+              <div className="modal-body text-center py-4">
+                <IconAlertTriangle size={48} className="text-danger mb-3" />
+                <h3>Delete Node?</h3>
+                <div className="text-secondary">
+                  Are you sure you want to delete <strong>"{selectedNode.name}"</strong>?
+                  <br /><br />
+                  This will also remove all connected relationships.
+                </div>
+              </div>
+              <div className="modal-footer">
+                <div className="w-100">
+                  <div className="row">
+                    <div className="col">
+                      <button className="btn w-100" onClick={() => setShowDeleteNodeConfirm(false)} disabled={isSaving}>
+                        Cancel
+                      </button>
+                    </div>
+                    <div className="col">
+                      <button className="btn btn-danger w-100" onClick={confirmDeleteNode} disabled={isSaving}>
+                        {isSaving ? <><span className="spinner-border spinner-border-sm me-2" />Deleting...</> : 'Yes, Delete'}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Edge Confirmation Modal */}
+      {showDeleteEdgeConfirm && selectedEdge && (
+        <div className="modal modal-blur show d-block" tabIndex={-1} style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
+          <div className="modal-dialog modal-sm modal-dialog-centered">
+            <div className="modal-content">
+              <div className="modal-status bg-danger" />
+              <div className="modal-body text-center py-4">
+                <IconAlertTriangle size={48} className="text-danger mb-3" />
+                <h3>Delete Relationship?</h3>
+                <div className="text-secondary">
+                  Are you sure you want to delete <strong>"{formatEdgeType(selectedEdge.type)}"</strong>?
+                </div>
+              </div>
+              <div className="modal-footer">
+                <div className="w-100">
+                  <div className="row">
+                    <div className="col">
+                      <button className="btn w-100" onClick={() => setShowDeleteEdgeConfirm(false)} disabled={isSaving}>
+                        Cancel
+                      </button>
+                    </div>
+                    <div className="col">
+                      <button className="btn btn-danger w-100" onClick={confirmDeleteEdge} disabled={isSaving}>
+                        {isSaving ? <><span className="spinner-border spinner-border-sm me-2" />Deleting...</> : 'Yes, Delete'}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Alert Modal */}
+      {alertMessage && (
+        <div className="modal modal-blur show d-block" tabIndex={-1} style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
+          <div className="modal-dialog modal-sm modal-dialog-centered">
+            <div className="modal-content">
+              <div className={`modal-status ${alertMessage.type === 'error' ? 'bg-danger' : alertMessage.type === 'success' ? 'bg-success' : 'bg-info'}`} />
+              <div className="modal-body text-center py-4">
+                <IconAlertTriangle size={48} className={`mb-3 ${alertMessage.type === 'error' ? 'text-danger' : alertMessage.type === 'success' ? 'text-success' : 'text-info'}`} />
+                <h3>{alertMessage.title}</h3>
+                <div className="text-secondary">{alertMessage.message}</div>
+              </div>
+              <div className="modal-footer">
+                <button className="btn w-100" onClick={() => setAlertMessage(null)}>
+                  OK
                 </button>
               </div>
             </div>
