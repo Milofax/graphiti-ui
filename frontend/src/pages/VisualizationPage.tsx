@@ -1143,9 +1143,8 @@ export function VisualizationPage() {
       node.attr('transform', (d: any) => `translate(${d.x},${d.y})`);
     });
 
-    // Auto-fit after initial positioning (only once per data load)
-    // Use timeout to let simulation run a few ticks first
-    const autoFitTimeout = setTimeout(() => {
+    // Auto-fit when simulation ends (only once per graph selection)
+    simulation.on('end', () => {
       if (autoFitDoneRef.current) return;
       autoFitDoneRef.current = true;
 
@@ -1182,11 +1181,10 @@ export function VisualizationPage() {
         // Instant fit (no animation) to avoid double-zoom effect
         svg.call(zoom.transform, transform);
       }
-    }, 100); // Short delay for initial node positioning
+    });
 
     return () => {
       simulation.stop();
-      clearTimeout(autoFitTimeout);
     };
   }, [graphData, theme, typeColors, handleNodeClick, handleEdgeClick, clearSelection, selectedGroup, linkDistance, chargeStrength, nodeSize, curveSpacing]);
 
@@ -2062,13 +2060,13 @@ export function VisualizationPage() {
                 )}
 
                 <div className="mb-3">
-                  <label className="form-label">Summary</label>
+                  <label className="form-label">Initial Description For LLM</label>
                   <textarea
                     className="form-control"
                     rows={3}
                     value={newNodeSummary}
                     onChange={e => setNewNodeSummary(e.target.value)}
-                    placeholder="Description of this entity..."
+                    placeholder="Describe the entity - LLM will extract and summarize..."
                   />
                 </div>
                 <div className="mb-0">
@@ -2178,13 +2176,13 @@ export function VisualizationPage() {
                 </div>
 
                 <div className="mb-0">
-                  <label className="form-label">Fact Description</label>
+                  <label className="form-label">Fact Description For LLM</label>
                   <textarea
                     className="form-control"
                     rows={3}
                     value={newEdgeFact}
                     onChange={e => setNewEdgeFact(e.target.value)}
-                    placeholder="Additional context about this relationship..."
+                    placeholder="Describe the relationship - LLM will extract and summarize..."
                   />
                 </div>
               </div>
