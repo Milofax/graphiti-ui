@@ -106,6 +106,7 @@ export function ForceGraphVisualization({
 
   const [is3D, setIs3D] = useState(false);
   const [dimensions, setDimensions] = useState({ width: 800, height: 600 });
+  const [zoom3D, setZoom3D] = useState(1);
 
   // Right-click panning state for 2D
   const isPanningRef = useRef(false);
@@ -176,6 +177,30 @@ export function ForceGraphVisualization({
     resizeObserver.observe(containerRef.current);
     return () => resizeObserver.disconnect();
   }, []);
+
+  // Track camera distance in 3D mode for zoom-based label visibility
+  useEffect(() => {
+    if (!is3D) return;
+
+    const updateCameraDistance = () => {
+      const fg = graphRef3D.current;
+      if (fg) {
+        const camera = fg.camera();
+        if (camera) {
+          const dist = Math.sqrt(
+            camera.position.x ** 2 +
+            camera.position.y ** 2 +
+            camera.position.z ** 2
+          );
+          setZoom3D(dist);
+        }
+      }
+    };
+
+    // Update every 100ms while in 3D mode
+    const interval = setInterval(updateCameraDistance, 100);
+    return () => clearInterval(interval);
+  }, [is3D]);
 
   // Update forces when parameters change (2D only - 3D uses different simulation)
   useEffect(() => {
@@ -281,9 +306,12 @@ export function ForceGraphVisualization({
     ctx.fillText(label, labelX, labelY);
   }, [showLabels, edgeLabelZoom, isDark]);
 
-  // 3D node object (sprite text for labels) - position below node like in 2D
+  // 3D node object (sprite text for labels) - respects zoom threshold
+  // 3D zoom works inversely: higher zoom3D = more zoomed out, so we invert the comparison
+  // Threshold is scaled: nodeLabelZoom 1.5 in 2D ≈ zoom3D < 300 in 3D
   const nodeThreeObject = useCallback((node: GraphNode): object | null => {
-    if (!showLabels) return null;
+    const zoomThreshold = nodeLabelZoom * 200; // Scale factor for 3D
+    if (!showLabels || zoom3D > zoomThreshold) return null;
 
     const sprite = new SpriteText(node.name || node.id);
     sprite.color = isDark ? '#fff' : '#000';
@@ -294,11 +322,12 @@ export function ForceGraphVisualization({
     // Position below node (negative Y in 3D space)
     (sprite as any).position.y = -(nodeSize * 0.5 + 8);
     return sprite;
-  }, [showLabels, isDark, nodeSize]);
+  }, [showLabels, isDark, nodeSize, zoom3D, nodeLabelZoom]);
 
-  // 3D link object (sprite text for labels)
+  // 3D link object (sprite text for labels) - respects zoom threshold
   const linkThreeObject = useCallback((link: GraphEdge): object | null => {
-    if (!showLabels || !link.type) return null;
+    const zoomThreshold = edgeLabelZoom * 200; // Scale factor for 3D
+    if (!showLabels || !link.type || zoom3D > zoomThreshold) return null;
 
     const sprite = new SpriteText(formatEdgeType(link.type));
     sprite.color = isDark ? '#ccc' : '#444';
@@ -307,7 +336,7 @@ export function ForceGraphVisualization({
     sprite.padding = 1;
     sprite.borderRadius = 2;
     return sprite;
-  }, [showLabels, isDark]);
+  }, [showLabels, isDark, zoom3D, edgeLabelZoom]);
 
   // Position link labels at midpoint
   const linkPositionUpdate = useCallback((sprite: any, { start, end }: { start: { x: number; y: number; z: number }; end: { x: number; y: number; z: number } }) => {
@@ -552,6 +581,21 @@ export function ForceGraphVisualization({
           linkThreeObject={linkThreeObject as any}
           linkThreeObjectExtend={true}
           linkPositionUpdate={linkPositionUpdate}
+          onEngineStop={() => {
+            // Update zoom based on camera distance when simulation stops
+            const fg = graphRef3D.current;
+            if (fg) {
+              const camera = fg.camera();
+              if (camera) {
+                const dist = Math.sqrt(
+                  camera.position.x ** 2 +
+                  camera.position.y ** 2 +
+                  camera.position.z ** 2
+                );
+                setZoom3D(dist);
+              }
+            }
+          }}
         />
       ) : (
         <ForceGraph2D
