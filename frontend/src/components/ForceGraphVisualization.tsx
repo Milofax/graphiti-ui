@@ -410,8 +410,10 @@ export function ForceGraphVisualization({
   };
 
   // 3D-specific props (no d3VelocityDecay - uses different simulation)
+  // Node size scaled down for 3D (appears larger due to perspective)
   const props3D = {
     ...commonProps,
+    nodeRelSize: nodeSize * 0.5,
   };
 
   // Handle zoom to fit (middle mouse button)
@@ -430,11 +432,17 @@ export function ForceGraphVisualization({
     }
   }, [handleZoomToFit]);
 
+  // Prevent context menu to allow right-click panning
+  const handleContextMenu = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+  }, []);
+
   return (
     <div
       ref={containerRef}
       className="w-100 h-100 position-relative"
       onMouseDown={handleMouseDown}
+      onContextMenu={handleContextMenu}
     >
       {/* 2D/3D Toggle */}
       <div className="position-absolute top-0 end-0 m-2 z-3">
@@ -471,6 +479,7 @@ export function ForceGraphVisualization({
         <ForceGraph3D
           ref={graphRef3D}
           {...(props3D as any)}
+          showNavInfo={false}
           nodeThreeObject={nodeThreeObject as any}
           nodeThreeObjectExtend={true}
           linkThreeObject={linkThreeObject as any}
