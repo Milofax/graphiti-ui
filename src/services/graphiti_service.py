@@ -231,13 +231,16 @@ class GraphitiClient:
         except Exception as e:
             return {"success": False, "error": str(e)}
 
-    async def update_entity_node(self, uuid: str, name: str | None = None, summary: str | None = None) -> dict:
+    async def update_entity_node(
+        self, uuid: str, name: str | None = None, summary: str | None = None, group_id: str | None = None
+    ) -> dict:
         """Update an entity node in the knowledge graph.
 
         Args:
             uuid: UUID of the entity to update
             name: New name (optional)
             summary: New summary (optional)
+            group_id: Graph/group ID (required for FalkorDB)
         """
         try:
             payload = {}
@@ -246,9 +249,13 @@ class GraphitiClient:
             if summary is not None:
                 payload["summary"] = summary
 
+            url = f"{self.base_url}/entity/{uuid}"
+            if group_id:
+                url += f"?group_id={group_id}"
+
             async with httpx.AsyncClient(timeout=30.0) as client:
                 response = await client.put(
-                    f"{self.base_url}/entity/{uuid}",
+                    url,
                     json=payload,
                     headers={"Content-Type": "application/json"},
                 )
@@ -258,13 +265,16 @@ class GraphitiClient:
         except Exception as e:
             return {"success": False, "error": str(e)}
 
-    async def update_entity_edge(self, uuid: str, name: str | None = None, fact: str | None = None) -> dict:
+    async def update_entity_edge(
+        self, uuid: str, name: str | None = None, fact: str | None = None, group_id: str | None = None
+    ) -> dict:
         """Update an entity edge in the knowledge graph.
 
         Args:
             uuid: UUID of the edge to update
             name: New name/type (optional)
             fact: New fact (optional)
+            group_id: Graph/group ID (required for FalkorDB)
         """
         try:
             payload = {}
@@ -273,9 +283,13 @@ class GraphitiClient:
             if fact is not None:
                 payload["fact"] = fact
 
+            url = f"{self.base_url}/edge/{uuid}"
+            if group_id:
+                url += f"?group_id={group_id}"
+
             async with httpx.AsyncClient(timeout=30.0) as client:
                 response = await client.put(
-                    f"{self.base_url}/edge/{uuid}",
+                    url,
                     json=payload,
                     headers={"Content-Type": "application/json"},
                 )

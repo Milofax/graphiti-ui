@@ -421,14 +421,22 @@ async def send_knowledge(request: SendKnowledgeRequest, current_user: CurrentUse
 
 
 @router.put("/node/{uuid}")
-async def update_node(uuid: str, request: UpdateNodeRequest, current_user: CurrentUser) -> dict:
-    """Update a node's properties via REST API (includes embedding regeneration)."""
+async def update_node(
+    uuid: str, request: UpdateNodeRequest, current_user: CurrentUser, group_id: str | None = None
+) -> dict:
+    """Update a node's properties via REST API (includes embedding regeneration).
+
+    Args:
+        uuid: Node UUID to update
+        group_id: Graph/group ID (required for FalkorDB)
+    """
     try:
         graphiti = get_graphiti_client()
         result = await graphiti.update_entity_node(
             uuid=uuid,
             name=request.name,
             summary=request.summary,
+            group_id=group_id,
         )
         return result
 
@@ -437,14 +445,22 @@ async def update_node(uuid: str, request: UpdateNodeRequest, current_user: Curre
 
 
 @router.put("/edge/{uuid}")
-async def update_edge(uuid: str, request: UpdateEdgeRequest, current_user: CurrentUser) -> dict:
-    """Update an edge's properties via REST API (includes embedding regeneration)."""
+async def update_edge(
+    uuid: str, request: UpdateEdgeRequest, current_user: CurrentUser, group_id: str | None = None
+) -> dict:
+    """Update an edge's properties via REST API (includes embedding regeneration).
+
+    Args:
+        uuid: Edge UUID to update
+        group_id: Graph/group ID (required for FalkorDB)
+    """
     try:
         graphiti = get_graphiti_client()
         result = await graphiti.update_entity_edge(
             uuid=uuid,
             name=request.name,
             fact=request.fact,
+            group_id=group_id,
         )
         return result
 

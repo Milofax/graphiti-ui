@@ -594,10 +594,13 @@ export function VisualizationPage() {
         }
       });
 
-      const response = await api.put(`/graph/node/${selectedNode.id}`, {
+      // Pass group_id as query param (required for FalkorDB)
+      const url = selectedGroup
+        ? `/graph/node/${selectedNode.id}?group_id=${encodeURIComponent(selectedGroup)}`
+        : `/graph/node/${selectedNode.id}`;
+      const response = await api.put(url, {
         name: editNodeName.trim() || null,
         summary: editNodeSummary.trim() || null,
-        group_id: selectedNode.group_id,
         attributes: Object.keys(filteredAttributes).length > 0 ? filteredAttributes : undefined,
       });
 
@@ -663,7 +666,11 @@ export function VisualizationPage() {
 
     setIsSaving(true);
     try {
-      const response = await api.put(`/graph/edge/${selectedEdge.uuid}`, {
+      // Pass group_id as query param (required for FalkorDB)
+      const url = selectedGroup
+        ? `/graph/edge/${selectedEdge.uuid}?group_id=${encodeURIComponent(selectedGroup)}`
+        : `/graph/edge/${selectedEdge.uuid}`;
+      const response = await api.put(url, {
         name: editEdgeName.trim() || null,
         fact: editEdgeFact.trim() || null,
       });
