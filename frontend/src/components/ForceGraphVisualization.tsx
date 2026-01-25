@@ -2,6 +2,7 @@ import { useRef, useState, useCallback, useEffect, useMemo } from 'react';
 import ForceGraph2D from 'react-force-graph-2d';
 import ForceGraph3D from 'react-force-graph-3d';
 import SpriteText from 'three-spritetext';
+import * as THREE from 'three';
 import { useTheme } from '../contexts/ThemeContext';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -106,7 +107,20 @@ export function ForceGraphVisualization({
 
   const [is3D, setIs3D] = useState(false);
   const [dimensions, setDimensions] = useState({ width: 800, height: 600 });
-  const [zoom3D, setZoom3D] = useState(1);
+
+  // 3D label visibility tracking
+  const animationFrameRef = useRef<number | null>(null);
+  // Store values in refs so animation loop always has current values
+  const nodeLabelZoomRef = useRef(nodeLabelZoom);
+  const edgeLabelZoomRef = useRef(edgeLabelZoom);
+  const showLabelsRef = useRef(showLabels);
+  const highlightedNodesRef = useRef(highlightedNodes);
+  const highlightedEdgesRef = useRef(highlightedEdges);
+  nodeLabelZoomRef.current = nodeLabelZoom;
+  edgeLabelZoomRef.current = edgeLabelZoom;
+  showLabelsRef.current = showLabels;
+  highlightedNodesRef.current = highlightedNodes;
+  highlightedEdgesRef.current = highlightedEdges;
 
   // Right-click panning state for 2D
   const isPanningRef = useRef(false);
@@ -178,42 +192,114 @@ export function ForceGraphVisualization({
     return () => resizeObserver.disconnect();
   }, []);
 
-  // Track camera distance in 3D mode for zoom-based label visibility
+  // Smooth 3D label visibility update using requestAnimationFrame (no React re-renders)
   useEffect(() => {
-    if (!is3D) return;
+    if (!is3D) {
+      if (animationFrameRef.current) {
+        cancelAnimationFrame(animationFrameRef.current);
+        animationFrameRef.current = null;
+      }
+      return;
+    }
 
-    const updateCameraDistance = () => {
+    const updateLabelVisibility = () => {
       const fg = graphRef3D.current;
-      if (fg) {
-        const camera = fg.camera();
-        if (camera) {
+      if (!fg) {
+        animationFrameRef.current = requestAnimationFrame(updateLabelVisibility);
+        return;
+      }
+
+      const camera = fg.camera();
+      const scene = fg.scene();
+      if (!camera || !scene) {
+        animationFrameRef.current = requestAnimationFrame(updateLabelVisibility);
+        return;
+      }
+
+      const camPos = camera.position;
+
+      // Read current values from refs (always up-to-date)
+      const nodeZoom = nodeLabelZoomRef.current;
+      const edgeZoom = edgeLabelZoomRef.current;
+      const showLbls = showLabelsRef.current;
+
+      // Threshold: higher slider = need to be closer (smaller distance)
+      // nodeLabelZoom 1 = show from distance 1000, nodeLabelZoom 5 = show from distance 600
+      const nodeThreshold = (11 - nodeZoom) * 100;
+      const edgeThreshold = (11 - edgeZoom) * 100;
+
+      // Reusable Vector3 for world position calculation
+      const worldPos = new THREE.Vector3();
+
+      // Get highlighted sets from refs
+      const hlNodes = highlightedNodesRef.current;
+      const hlEdges = highlightedEdgesRef.current;
+
+      // Traverse the scene to find all SpriteText objects
+      scene.traverse((obj: any) => {
+        // SpriteText has a 'text' property and is a Sprite
+        if (obj.isSprite && obj.text !== undefined) {
+          // Check if this sprite is for a highlighted item
+          const nodeId = obj.__nodeId;
+          const edgeIdx = obj.__edgeIndex;
+          const isHighlighted = (nodeId && hlNodes.has(nodeId)) || (edgeIdx !== undefined && edgeIdx >= 0 && hlEdges.has(edgeIdx));
+
+          // Always show highlighted labels
+          if (isHighlighted) {
+            obj.visible = showLbls;
+            return;
+          }
+
+          // Get world position for distance check
+          obj.getWorldPosition(worldPos);
           const dist = Math.sqrt(
-            camera.position.x ** 2 +
-            camera.position.y ** 2 +
-            camera.position.z ** 2
+            (worldPos.x - camPos.x) ** 2 +
+            (worldPos.y - camPos.y) ** 2 +
+            (worldPos.z - camPos.z) ** 2
           );
-          setZoom3D(dist);
+
+          // Use edge threshold for smaller text (edge labels), node threshold for larger
+          const threshold = obj.textHeight <= 3 ? edgeThreshold : nodeThreshold;
+          obj.visible = showLbls && dist < threshold;
         }
+      });
+
+      animationFrameRef.current = requestAnimationFrame(updateLabelVisibility);
+    };
+
+    animationFrameRef.current = requestAnimationFrame(updateLabelVisibility);
+    return () => {
+      if (animationFrameRef.current) {
+        cancelAnimationFrame(animationFrameRef.current);
+        animationFrameRef.current = null;
+      }
+    };
+  }, [is3D]); // Only depend on is3D - threshold values read from refs
+
+  // Update forces when parameters change
+  useEffect(() => {
+    const fg = is3D ? graphRef3D.current : graphRef2D.current;
+    if (!fg) return;
+
+    // Use timeout for 3D to ensure engine is ready
+    const updateForces = () => {
+      try {
+        const linkForce = fg.d3Force?.('link');
+        const chargeForce = fg.d3Force?.('charge');
+        if (linkForce) linkForce.distance(linkDistance);
+        if (chargeForce) chargeForce.strength(chargeStrength);
+        fg.d3ReheatSimulation?.();
+      } catch {
+        // Simulation not ready yet, ignore
       }
     };
 
-    // Update every 100ms while in 3D mode
-    const interval = setInterval(updateCameraDistance, 100);
-    return () => clearInterval(interval);
-  }, [is3D]);
-
-  // Update forces when parameters change (2D only - 3D uses different simulation)
-  useEffect(() => {
-    if (is3D) return; // 3D uses ngraph, not d3
-    const fg = graphRef2D.current;
-    if (!fg) return;
-
-    try {
-      fg.d3Force('link')?.distance(linkDistance);
-      fg.d3Force('charge')?.strength(chargeStrength);
-      fg.d3ReheatSimulation?.();
-    } catch {
-      // Simulation not ready yet, ignore
+    if (is3D) {
+      // 3D needs delay for engine initialization
+      const timer = setTimeout(updateForces, 200);
+      return () => clearTimeout(timer);
+    } else {
+      updateForces();
     }
   }, [linkDistance, chargeStrength, is3D]);
 
@@ -251,8 +337,8 @@ export function ForceGraphVisualization({
       ctx.stroke();
     }
 
-    // Draw label if zoom is sufficient
-    if (showLabels && globalScale >= nodeLabelZoom) {
+    // Draw label if highlighted OR zoom is sufficient
+    if (showLabels && (isHighlighted || globalScale >= nodeLabelZoom)) {
       const label = node.name || node.id;
       const fontSize = Math.max(10, 12 / globalScale);
       ctx.font = `${fontSize}px Sans-Serif`;
@@ -265,8 +351,13 @@ export function ForceGraphVisualization({
 
   // 2D link label rendering (library draws the lines, we just add labels)
   const paintLinkLabel2D = useCallback((link: GraphEdge, ctx: CanvasRenderingContext2D, globalScale: number) => {
-    // Only draw labels if zoom is sufficient
-    if (!showLabels || globalScale < edgeLabelZoom || !link.type) return;
+    if (!showLabels || !link.type) return;
+
+    const idx = typeof link.index === 'number' ? link.index : -1;
+    const isHighlighted = highlightedEdges.has(idx);
+
+    // Only draw labels if highlighted OR zoom is sufficient
+    if (!isHighlighted && globalScale < edgeLabelZoom) return;
 
     const source = link.source as GraphNode;
     const target = link.target as GraphNode;
@@ -304,15 +395,10 @@ export function ForceGraphVisualization({
     ctx.textBaseline = 'middle';
     ctx.fillStyle = isDark ? 'rgba(255,255,255,0.7)' : 'rgba(0,0,0,0.7)';
     ctx.fillText(label, labelX, labelY);
-  }, [showLabels, edgeLabelZoom, isDark]);
+  }, [showLabels, edgeLabelZoom, isDark, highlightedEdges]);
 
-  // 3D node object (sprite text for labels) - respects zoom threshold
-  // 3D zoom works inversely: higher zoom3D = more zoomed out, so we invert the comparison
-  // Threshold is scaled: nodeLabelZoom 1.5 in 2D ≈ zoom3D < 300 in 3D
+  // 3D node object (sprite text for labels) - visibility controlled by animation loop
   const nodeThreeObject = useCallback((node: GraphNode): object | null => {
-    const zoomThreshold = nodeLabelZoom * 200; // Scale factor for 3D
-    if (!showLabels || zoom3D > zoomThreshold) return null;
-
     const sprite = new SpriteText(node.name || node.id);
     sprite.color = isDark ? '#fff' : '#000';
     sprite.textHeight = 4;
@@ -321,13 +407,14 @@ export function ForceGraphVisualization({
     sprite.borderRadius = 2;
     // Position below node (negative Y in 3D space)
     (sprite as any).position.y = -(nodeSize * 0.5 + 8);
+    // Store node ID for highlight checking
+    (sprite as any).__nodeId = node.id;
     return sprite;
-  }, [showLabels, isDark, nodeSize, zoom3D, nodeLabelZoom]);
+  }, [isDark, nodeSize]);
 
-  // 3D link object (sprite text for labels) - respects zoom threshold
+  // 3D link object (sprite text for labels) - visibility controlled by animation loop
   const linkThreeObject = useCallback((link: GraphEdge): object | null => {
-    const zoomThreshold = edgeLabelZoom * 200; // Scale factor for 3D
-    if (!showLabels || !link.type || zoom3D > zoomThreshold) return null;
+    if (!link.type) return null;
 
     const sprite = new SpriteText(formatEdgeType(link.type));
     sprite.color = isDark ? '#ccc' : '#444';
@@ -335,18 +422,45 @@ export function ForceGraphVisualization({
     sprite.backgroundColor = isDark ? 'rgba(0,0,0,0.4)' : 'rgba(255,255,255,0.4)';
     sprite.padding = 1;
     sprite.borderRadius = 2;
+    // Store edge index for highlight checking
+    (sprite as any).__edgeIndex = typeof link.index === 'number' ? link.index : -1;
     return sprite;
-  }, [showLabels, isDark, zoom3D, edgeLabelZoom]);
+  }, [isDark]);
 
-  // Position link labels at midpoint
-  const linkPositionUpdate = useCallback((sprite: any, { start, end }: { start: { x: number; y: number; z: number }; end: { x: number; y: number; z: number } }) => {
+  // Position link labels at midpoint, offset by curvature
+  const linkPositionUpdate = useCallback((sprite: any, { start, end }: { start: { x: number; y: number; z: number }; end: { x: number; y: number; z: number } }, link: any) => {
     if (!sprite) return;
-    const middle = {
-      x: (start.x + end.x) / 2,
-      y: (start.y + end.y) / 2,
-      z: (start.z + end.z) / 2,
-    };
-    Object.assign(sprite.position, middle);
+
+    // Calculate midpoint
+    const midX = (start.x + end.x) / 2;
+    const midY = (start.y + end.y) / 2;
+    const midZ = (start.z + end.z) / 2;
+
+    // If link has curvature, offset label perpendicular to the line
+    const curvature = link?.curvature || 0;
+    if (curvature !== 0) {
+      // Calculate perpendicular offset in 3D
+      // Direction vector from start to end
+      const dx = end.x - start.x;
+      const dy = end.y - start.y;
+      const dz = end.z - start.z;
+      const len = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1;
+
+      // Perpendicular vector (cross product with up vector [0,1,0])
+      const perpX = -dz / len;
+      const perpZ = dx / len;
+
+      // Offset magnitude based on curvature and distance
+      const offset = curvature * len * 0.25;
+
+      sprite.position.x = midX + perpX * offset;
+      sprite.position.y = midY;
+      sprite.position.z = midZ + perpZ * offset;
+    } else {
+      sprite.position.x = midX;
+      sprite.position.y = midY;
+      sprite.position.z = midZ;
+    }
   }, []);
 
   // Process graph data to add edge indices and curvature for multiple edges
@@ -482,7 +596,18 @@ export function ForceGraphVisualization({
   const handleZoomToFit = useCallback(() => {
     const fg = is3D ? graphRef3D.current : graphRef2D.current;
     if (fg) {
-      fg.zoomToFit?.(400);
+      fg.zoomToFit?.(400, 0);
+
+      // For 3D, zoom in after fit completes
+      if (is3D) {
+        setTimeout(() => {
+          const camera = fg.camera();
+          if (camera) {
+            // Move camera 50% closer to origin
+            camera.position.multiplyScalar(0.5);
+          }
+        }, 450);
+      }
     }
   }, [is3D]);
 
@@ -581,21 +706,6 @@ export function ForceGraphVisualization({
           linkThreeObject={linkThreeObject as any}
           linkThreeObjectExtend={true}
           linkPositionUpdate={linkPositionUpdate}
-          onEngineStop={() => {
-            // Update zoom based on camera distance when simulation stops
-            const fg = graphRef3D.current;
-            if (fg) {
-              const camera = fg.camera();
-              if (camera) {
-                const dist = Math.sqrt(
-                  camera.position.x ** 2 +
-                  camera.position.y ** 2 +
-                  camera.position.z ** 2
-                );
-                setZoom3D(dist);
-              }
-            }
-          }}
         />
       ) : (
         <ForceGraph2D

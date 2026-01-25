@@ -722,19 +722,28 @@ export function VisualizationPage() {
         }
       });
 
+      const normalizedName = editNodeName.trim() || null;
+      const normalizedSummary = editNodeSummary.trim() || null;
+
       // Pass group_id as query param (required for FalkorDB)
       const url = selectedGroup
         ? `/graph/node/${selectedNode.id}?group_id=${encodeURIComponent(selectedGroup)}`
         : `/graph/node/${selectedNode.id}`;
       const response = await api.put(url, {
-        name: editNodeName.trim() || null,
-        summary: editNodeSummary.trim() || null,
+        name: normalizedName,
+        summary: normalizedSummary,
         attributes: Object.keys(filteredAttributes).length > 0 ? filteredAttributes : undefined,
       });
 
       if (response.data.success) {
         setIsEditingNode(false);
         setEditNodeAttributes({});
+        // Update selected node with new values so sidebar shows updated data
+        setSelectedNode({
+          ...selectedNode,
+          name: normalizedName || selectedNode.name,
+          summary: normalizedSummary || selectedNode.summary,
+        });
         refreshGraph();
       } else {
         setAlertMessage({ type: 'error', title: 'Update Failed', message: response.data.error });
@@ -794,17 +803,31 @@ export function VisualizationPage() {
 
     setIsSaving(true);
     try {
+      // Convert edge name to UPPER_SNAKE_CASE (same as when creating edges)
+      const normalizedName = editEdgeName.trim()
+        ? editEdgeName.trim().toUpperCase().replace(/\s+/g, '_')
+        : null;
+      const normalizedFact = editEdgeFact.trim() || null;
+
       // Pass group_id as query param (required for FalkorDB)
       const url = selectedGroup
         ? `/graph/edge/${selectedEdge.uuid}?group_id=${encodeURIComponent(selectedGroup)}`
         : `/graph/edge/${selectedEdge.uuid}`;
       const response = await api.put(url, {
-        name: editEdgeName.trim() || null,
-        fact: editEdgeFact.trim() || null,
+        name: normalizedName,
+        fact: normalizedFact,
       });
 
       if (response.data.success) {
         setIsEditingEdge(false);
+        // Update selected edge with new values so sidebar shows updated data
+        setSelectedEdge({
+          ...selectedEdge,
+          type: normalizedName || selectedEdge.type,
+          fact: normalizedFact || selectedEdge.fact,
+        });
+        // Also update the edit fields to show normalized values
+        if (normalizedName) setEditEdgeName(normalizedName);
         refreshGraph();
       } else {
         setAlertMessage({ type: 'error', title: 'Update Failed', message: response.data.error });
