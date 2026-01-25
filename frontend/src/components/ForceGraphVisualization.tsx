@@ -105,7 +105,7 @@ export function ForceGraphVisualization({
   const containerRef = useRef<HTMLDivElement>(null);
 
   const [is3D, setIs3D] = useState(false);
-  const [currentZoom, setCurrentZoom] = useState(1);
+  // Zoom state removed - 2D uses globalScale from canvas, 3D shows labels always
   const [dimensions, setDimensions] = useState({ width: 800, height: 600 });
 
   // Build type color map
@@ -126,12 +126,31 @@ export function ForceGraphVisualization({
     return typeColors[node.type] || defaultColor;
   }, [typeColors, highlightedNodes]);
 
-  const getLinkColor = useCallback((link: GraphEdge) => {
+  // 2D link color (more transparent)
+  const getLinkColor2D = useCallback((link: GraphEdge) => {
     const idx = typeof link.index === 'number' ? link.index : -1;
     if (highlightedEdges.has(idx)) {
       return highlightColor;
     }
     return isDark ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.2)';
+  }, [highlightedEdges, isDark]);
+
+  // 3D link color (less transparent for better visibility)
+  const getLinkColor3D = useCallback((link: GraphEdge) => {
+    const idx = typeof link.index === 'number' ? link.index : -1;
+    if (highlightedEdges.has(idx)) {
+      return highlightColor;
+    }
+    return isDark ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.4)';
+  }, [highlightedEdges, isDark]);
+
+  // Particle color (transparent)
+  const getParticleColor = useCallback((link: GraphEdge) => {
+    const idx = typeof link.index === 'number' ? link.index : -1;
+    if (highlightedEdges.has(idx)) {
+      return 'rgba(255,171,0,0.6)'; // Highlight color with transparency
+    }
+    return isDark ? 'rgba(255,255,255,0.4)' : 'rgba(0,0,0,0.4)';
   }, [highlightedEdges, isDark]);
 
   const getLinkWidth = useCallback((link: GraphEdge) => {
@@ -258,27 +277,31 @@ export function ForceGraphVisualization({
     ctx.fillText(label, labelX, labelY);
   }, [showLabels, edgeLabelZoom, isDark]);
 
-  // 3D node object (sprite text for labels)
+  // 3D node object (sprite text for labels) - always show in 3D
   const nodeThreeObject = useCallback((node: GraphNode): object | null => {
-    if (!showLabels || currentZoom < nodeLabelZoom) return null;
+    if (!showLabels) return null;
 
     const sprite = new SpriteText(node.name || node.id);
-    sprite.color = getNodeColor(node);
-    sprite.textHeight = 6;
-    // Position label above node
-    (sprite as any).position.y = nodeSize + 8;
+    sprite.color = isDark ? '#fff' : '#000';
+    sprite.textHeight = 4;
+    sprite.backgroundColor = isDark ? 'rgba(0,0,0,0.5)' : 'rgba(255,255,255,0.5)';
+    sprite.padding = 1;
+    sprite.borderRadius = 2;
     return sprite;
-  }, [showLabels, currentZoom, nodeLabelZoom, getNodeColor, nodeSize]);
+  }, [showLabels, isDark]);
 
-  // 3D link object (sprite text for labels)
+  // 3D link object (sprite text for labels) - always show in 3D
   const linkThreeObject = useCallback((link: GraphEdge): object | null => {
-    if (!showLabels || currentZoom < edgeLabelZoom || !link.type) return null;
+    if (!showLabels || !link.type) return null;
 
     const sprite = new SpriteText(formatEdgeType(link.type));
-    sprite.color = isDark ? '#aaa' : '#666';
-    sprite.textHeight = 4;
+    sprite.color = isDark ? '#ccc' : '#444';
+    sprite.textHeight = 3;
+    sprite.backgroundColor = isDark ? 'rgba(0,0,0,0.4)' : 'rgba(255,255,255,0.4)';
+    sprite.padding = 1;
+    sprite.borderRadius = 2;
     return sprite;
-  }, [showLabels, currentZoom, edgeLabelZoom, isDark]);
+  }, [showLabels, isDark]);
 
   // Position link labels at midpoint
   const linkPositionUpdate = useCallback((sprite: any, { start, end }: { start: { x: number; y: number; z: number }; end: { x: number; y: number; z: number } }) => {
@@ -388,13 +411,10 @@ export function ForceGraphVisualization({
     nodeRelSize: nodeSize,
     linkSource: 'source' as const,
     linkTarget: 'target' as const,
-    linkColor: getLinkColor,
     linkWidth: getLinkWidth,
     linkCurvature: (link: any) => link.curvature || 0,
     linkDirectionalParticles: 4,
     linkDirectionalParticleSpeed: 0.004,
-    linkDirectionalParticleWidth: 2,
-    linkDirectionalParticleColor: getLinkColor,
     onNodeClick: handleNodeClick,
     onLinkClick: handleLinkClick,
     onBackgroundClick: handleBackgroundClick,
@@ -407,13 +427,20 @@ export function ForceGraphVisualization({
   const props2D = {
     ...commonProps,
     d3VelocityDecay: 0.4,
+    linkColor: getLinkColor2D,
+    linkDirectionalParticleWidth: 2,
+    linkDirectionalParticleColor: getParticleColor,
   };
 
-  // 3D-specific props (no d3VelocityDecay - uses different simulation)
+  // 3D-specific props
   // Node size scaled down for 3D (appears larger due to perspective)
+  // Particles smaller and transparent
   const props3D = {
     ...commonProps,
     nodeRelSize: nodeSize * 0.5,
+    linkColor: getLinkColor3D,
+    linkDirectionalParticleWidth: 1,
+    linkDirectionalParticleColor: getParticleColor,
   };
 
   // Handle zoom to fit (middle mouse button)
@@ -444,8 +471,18 @@ export function ForceGraphVisualization({
       onMouseDown={handleMouseDown}
       onContextMenu={handleContextMenu}
     >
-      {/* 2D/3D Toggle */}
-      <div className="position-absolute top-0 end-0 m-2 z-3">
+      {/* Navigation Hints (bottom center) */}
+      <div className="position-absolute bottom-0 start-50 translate-middle-x mb-2 z-3">
+        <div className="d-flex gap-3 px-3 py-1 rounded" style={{ backgroundColor: 'rgba(0,0,0,0.5)', fontSize: '0.75rem', color: 'rgba(255,255,255,0.8)' }}>
+          <span>🖱️ Left: {is3D ? 'Rotate' : 'Select'}</span>
+          <span>🖱️ Right: Pan</span>
+          <span>⚙️ Wheel: Zoom</span>
+          <span>🖱️ Middle: Fit All</span>
+        </div>
+      </div>
+
+      {/* 2D/3D Toggle (bottom right) */}
+      <div className="position-absolute bottom-0 end-0 m-2 z-3">
         <div className="btn-group btn-group-sm" role="group">
           <button
             type="button"
@@ -464,16 +501,6 @@ export function ForceGraphVisualization({
         </div>
       </div>
 
-      {/* Navigation Hints */}
-      <div className="position-absolute bottom-0 start-50 translate-middle-x mb-2 z-3">
-        <div className="d-flex gap-3 px-3 py-1 rounded" style={{ backgroundColor: 'rgba(0,0,0,0.5)', fontSize: '0.75rem', color: 'rgba(255,255,255,0.8)' }}>
-          <span>🖱️ Left: {is3D ? 'Rotate' : 'Select'}</span>
-          <span>🖱️ Right: Pan</span>
-          <span>⚙️ Wheel: Zoom</span>
-          <span>🖱️ Middle: Fit All</span>
-        </div>
-      </div>
-
       {/* Graph Renderer */}
       {is3D ? (
         <ForceGraph3D
@@ -485,7 +512,6 @@ export function ForceGraphVisualization({
           linkThreeObject={linkThreeObject as any}
           linkThreeObjectExtend={true}
           linkPositionUpdate={linkPositionUpdate}
-          onZoom={({ k }: { k: number }) => setCurrentZoom(k)}
         />
       ) : (
         <ForceGraph2D
@@ -495,7 +521,6 @@ export function ForceGraphVisualization({
           nodeCanvasObjectMode={() => 'replace'}
           linkCanvasObject={paintLinkLabel2D as any}
           linkCanvasObjectMode={() => 'after'}
-          onZoom={({ k }: { k: number }) => setCurrentZoom(k)}
         />
       )}
     </div>
