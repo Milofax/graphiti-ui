@@ -311,7 +311,10 @@ export function ForceGraphVisualization({
     const processedLinks = graphData.links.map((link, index) => {
       const sourceId = typeof link.source === 'string' ? link.source : link.source.id;
       const targetId = typeof link.target === 'string' ? link.target : link.target.id;
-      const pairKey = [sourceId, targetId].sort().join('|');
+      // Create sorted pair key for grouping, but track if this edge is "reversed"
+      const sorted = [sourceId, targetId].sort();
+      const pairKey = sorted.join('|');
+      const isReversed = sorted[0] !== sourceId; // true if actual direction differs from sorted
 
       if (!linkCounts[pairKey]) {
         linkCounts[pairKey] = 0;
@@ -319,7 +322,7 @@ export function ForceGraphVisualization({
       }
       linkCounts[pairKey]++;
 
-      return { ...link, index, pairKey };
+      return { ...link, index, pairKey, isReversed };
     });
 
     // Second pass: assign curvature based on count
@@ -359,6 +362,12 @@ export function ForceGraphVisualization({
             if (idx % 2 === 0) curvature *= -1;
           }
         }
+      }
+
+      // Flip curvature if edge direction is reversed from sorted order
+      // This ensures curves bend consistently regardless of source/target order
+      if (link.isReversed) {
+        curvature *= -1;
       }
 
       return { ...link, curvature };

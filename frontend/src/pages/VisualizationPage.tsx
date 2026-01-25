@@ -116,7 +116,11 @@ export function VisualizationPage() {
   const [selectedEdge, setSelectedEdge] = useState<Edge | null>(null);
   const [highlightedNodes, setHighlightedNodes] = useState<Set<string>>(new Set());
   const [highlightedEdges, setHighlightedEdges] = useState<Set<number>>(new Set());
-  const [limit, setLimit] = useState(500);
+  const [limit, setLimit] = useState(() => {
+    if (typeof window === 'undefined') return 500;
+    const saved = localStorage.getItem('graphiti-limit');
+    return saved ? Number(saved) : 500;
+  });
   const [refreshKey, setRefreshKey] = useState(0);
   const [groups, setGroups] = useState<string[]>([]);
   const [selectedGroup, setSelectedGroup] = useState<string>('');
@@ -157,6 +161,11 @@ export function VisualizationPage() {
     localStorage.setItem('graphiti-layout-nodeLabelZoom', String(nodeLabelZoom));
     localStorage.setItem('graphiti-layout-edgeLabelZoom', String(edgeLabelZoom));
   }, [linkDistance, chargeStrength, nodeSize, curveSpacing, nodeLabelZoom, edgeLabelZoom]);
+
+  // Persist node limit to localStorage
+  useEffect(() => {
+    localStorage.setItem('graphiti-limit', String(limit));
+  }, [limit]);
 
   // Auto-refresh queue status every 2 seconds
   useEffect(() => {
