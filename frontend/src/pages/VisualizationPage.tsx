@@ -1046,7 +1046,7 @@ export function VisualizationPage() {
       {/* Graph container */}
       <div ref={containerRef} className="card flex-grow-1 position-relative">
         {isLoading && (
-          <div className="position-absolute top-0 start-0 w-100 h-100 d-flex align-items-center justify-content-center" style={{ backgroundColor: 'var(--tblr-card-bg)', opacity: 0.9 }}>
+          <div className="position-absolute top-0 start-0 w-100 h-100 d-flex align-items-center justify-content-center" style={{ backgroundColor: 'var(--tblr-card-bg)', opacity: 0.95, zIndex: 1000 }}>
             <div className="text-center">
               <div className="spinner-border text-primary" role="status" />
               <p className="mt-3 text-secondary">Loading graph data...</p>
