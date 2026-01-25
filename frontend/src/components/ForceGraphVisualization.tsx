@@ -105,8 +105,12 @@ export function ForceGraphVisualization({
   const containerRef = useRef<HTMLDivElement>(null);
 
   const [is3D, setIs3D] = useState(false);
-  // Zoom state removed - 2D uses globalScale from canvas, 3D shows labels always
   const [dimensions, setDimensions] = useState({ width: 800, height: 600 });
+
+  // Right-click panning state for 2D
+  const isPanningRef = useRef(false);
+  const panStartRef = useRef({ x: 0, y: 0 });
+  const centerStartRef = useRef({ x: 0, y: 0 });
 
   // Build type color map
   const typeColors = useMemo(() => {
@@ -277,7 +281,7 @@ export function ForceGraphVisualization({
     ctx.fillText(label, labelX, labelY);
   }, [showLabels, edgeLabelZoom, isDark]);
 
-  // 3D node object (sprite text for labels) - always show in 3D
+  // 3D node object (sprite text for labels) - position below node like in 2D
   const nodeThreeObject = useCallback((node: GraphNode): object | null => {
     if (!showLabels) return null;
 
@@ -287,10 +291,12 @@ export function ForceGraphVisualization({
     sprite.backgroundColor = isDark ? 'rgba(0,0,0,0.5)' : 'rgba(255,255,255,0.5)';
     sprite.padding = 1;
     sprite.borderRadius = 2;
+    // Position below node (negative Y in 3D space)
+    (sprite as any).position.y = -(nodeSize * 0.5 + 8);
     return sprite;
-  }, [showLabels, isDark]);
+  }, [showLabels, isDark, nodeSize]);
 
-  // 3D link object (sprite text for labels) - always show in 3D
+  // 3D link object (sprite text for labels)
   const linkThreeObject = useCallback((link: GraphEdge): object | null => {
     if (!showLabels || !link.type) return null;
 
@@ -451,13 +457,44 @@ export function ForceGraphVisualization({
     }
   }, [is3D]);
 
-  // Handle middle mouse button for zoom reset
+  // Handle mouse down - middle button for zoom fit, right button for pan start (2D only)
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     if (e.button === 1) { // Middle mouse button
       e.preventDefault();
       handleZoomToFit();
+    } else if (e.button === 2 && !is3D) { // Right mouse button - start panning in 2D
+      e.preventDefault();
+      isPanningRef.current = true;
+      panStartRef.current = { x: e.clientX, y: e.clientY };
+      const fg = graphRef2D.current;
+      if (fg) {
+        const center = fg.centerAt();
+        centerStartRef.current = { x: center?.x || 0, y: center?.y || 0 };
+      }
     }
-  }, [handleZoomToFit]);
+  }, [handleZoomToFit, is3D]);
+
+  // Handle mouse move - pan in 2D when right-click dragging
+  const handleMouseMove = useCallback((e: React.MouseEvent) => {
+    if (!isPanningRef.current || is3D) return;
+
+    const fg = graphRef2D.current;
+    if (!fg) return;
+
+    const zoom = fg.zoom();
+    const dx = (e.clientX - panStartRef.current.x) / zoom;
+    const dy = (e.clientY - panStartRef.current.y) / zoom;
+
+    fg.centerAt(
+      centerStartRef.current.x - dx,
+      centerStartRef.current.y - dy
+    );
+  }, [is3D]);
+
+  // Handle mouse up - stop panning
+  const handleMouseUp = useCallback(() => {
+    isPanningRef.current = false;
+  }, []);
 
   // Prevent context menu to allow right-click panning
   const handleContextMenu = useCallback((e: React.MouseEvent) => {
@@ -469,6 +506,9 @@ export function ForceGraphVisualization({
       ref={containerRef}
       className="w-100 h-100 position-relative"
       onMouseDown={handleMouseDown}
+      onMouseMove={handleMouseMove}
+      onMouseUp={handleMouseUp}
+      onMouseLeave={handleMouseUp}
       onContextMenu={handleContextMenu}
     >
       {/* Navigation Hints (bottom center) */}
