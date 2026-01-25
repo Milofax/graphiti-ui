@@ -204,24 +204,25 @@ export function VisualizationPage() {
     const trimmedId = newGraphId.trim();
     if (!trimmedId) return;
 
-    // Check if graph already exists
-    if (groups.includes(trimmedId)) {
-      setSelectedGroup(trimmedId);
-      setShowCreateGraphModal(false);
-      setNewGraphId('');
-      return;
-    }
-
-    // Add to groups list and select it
-    setGroups(prev => [...prev, trimmedId].sort());
+    // Just select the group - don't add to list until first node/edge is created
     setSelectedGroup(trimmedId);
     setShowCreateGraphModal(false);
     setNewGraphId('');
-    setAlertMessage({
-      type: 'info',
-      title: 'New Graph Created',
-      message: `Graph "${trimmedId}" is ready. Add nodes or edges to populate it.`,
-    });
+
+    if (!groups.includes(trimmedId)) {
+      setAlertMessage({
+        type: 'info',
+        title: 'New Graph Selected',
+        message: `Graph "${trimmedId}" will be created when you add nodes or edges.`,
+      });
+    }
+  };
+
+  // Helper to ensure selectedGroup is in groups list after creating content
+  const ensureGroupInList = () => {
+    if (selectedGroup && !groups.includes(selectedGroup)) {
+      setGroups(prev => [...prev, selectedGroup].sort());
+    }
   };
 
   const handleDeleteGraph = async () => {
@@ -508,7 +509,7 @@ export function VisualizationPage() {
         setNewNodeSummary('');
         setSelectedEntityType(null);
         setNodeAttributes({});
-        // Refresh graph immediately - direct creation is instant
+        ensureGroupInList(); // Add new graph to dropdown
         refreshGraph();
       } else {
         setAlertMessage({ type: 'error', title: 'Create Failed', message: response.data.error });
@@ -542,7 +543,7 @@ export function VisualizationPage() {
         setEdgeTargetNode(null);
         setNewEdgeType('');
         setNewEdgeFact('');
-        // Refresh graph immediately - direct creation is instant
+        ensureGroupInList(); // Add new graph to dropdown
         refreshGraph();
       } else {
         setAlertMessage({ type: 'error', title: 'Create Failed', message: response.data.error });
@@ -570,6 +571,7 @@ export function VisualizationPage() {
       if (response.data.success) {
         setShowSendKnowledgeModal(false);
         setKnowledgeContent('');
+        ensureGroupInList(); // Add new graph to dropdown
         setAlertMessage({
           type: 'info',
           title: 'Knowledge Submitted',
@@ -1360,12 +1362,16 @@ export function VisualizationPage() {
             <div className="col-auto">
               <div className="input-group input-group-sm">
                 <select
-                  value={groups.includes(selectedGroup) ? selectedGroup : ''}
+                  value={selectedGroup}
                   onChange={e => setSelectedGroup(e.target.value)}
                   className="form-select form-select-sm"
                   style={{ minWidth: '150px' }}
                 >
                   <option value="">All Groups</option>
+                  {/* Show pending new graph if selected but not yet in list */}
+                  {selectedGroup && !groups.includes(selectedGroup) && (
+                    <option value={selectedGroup}>{selectedGroup} (new)</option>
+                  )}
                   {groups.map(g => (
                     <option key={g} value={g}>{g}</option>
                   ))}
