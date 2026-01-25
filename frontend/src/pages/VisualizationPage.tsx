@@ -131,7 +131,10 @@ export function VisualizationPage() {
   const prevProcessingRef = useRef<number>(0);
 
   // Graph layout parameters (with localStorage persistence)
-  const LAYOUT_DEFAULTS = { linkDistance: 150, chargeStrength: -800, nodeSize: 12, curveSpacing: 50 };
+  const LAYOUT_DEFAULTS = {
+    linkDistance: 150, chargeStrength: -800, nodeSize: 12, curveSpacing: 50,
+    nodeLabelZoom: 1.5, edgeLabelZoom: 2.5
+  };
   const loadLayoutSetting = (key: string, defaultValue: number) => {
     if (typeof window === 'undefined') return defaultValue;
     const saved = localStorage.getItem(`graphiti-layout-${key}`);
@@ -141,6 +144,8 @@ export function VisualizationPage() {
   const [chargeStrength, setChargeStrength] = useState(() => loadLayoutSetting('chargeStrength', LAYOUT_DEFAULTS.chargeStrength));
   const [nodeSize, setNodeSize] = useState(() => loadLayoutSetting('nodeSize', LAYOUT_DEFAULTS.nodeSize));
   const [curveSpacing, setCurveSpacing] = useState(() => loadLayoutSetting('curveSpacing', LAYOUT_DEFAULTS.curveSpacing));
+  const [nodeLabelZoom, setNodeLabelZoom] = useState(() => loadLayoutSetting('nodeLabelZoom', LAYOUT_DEFAULTS.nodeLabelZoom));
+  const [edgeLabelZoom, setEdgeLabelZoom] = useState(() => loadLayoutSetting('edgeLabelZoom', LAYOUT_DEFAULTS.edgeLabelZoom));
   const [showLayoutControls, setShowLayoutControls] = useState(false);
 
   // Persist layout settings to localStorage
@@ -149,7 +154,9 @@ export function VisualizationPage() {
     localStorage.setItem('graphiti-layout-chargeStrength', String(chargeStrength));
     localStorage.setItem('graphiti-layout-nodeSize', String(nodeSize));
     localStorage.setItem('graphiti-layout-curveSpacing', String(curveSpacing));
-  }, [linkDistance, chargeStrength, nodeSize, curveSpacing]);
+    localStorage.setItem('graphiti-layout-nodeLabelZoom', String(nodeLabelZoom));
+    localStorage.setItem('graphiti-layout-edgeLabelZoom', String(edgeLabelZoom));
+  }, [linkDistance, chargeStrength, nodeSize, curveSpacing, nodeLabelZoom, edgeLabelZoom]);
 
   // Auto-refresh queue status every 2 seconds
   useEffect(() => {
@@ -250,6 +257,15 @@ export function VisualizationPage() {
       nodes: graphData.nodes as GraphNode[],
       links: graphData.edges.map((e, i) => ({ ...e, index: i })) as GraphEdge[],
     };
+  }, [graphData]);
+
+  // Update processedEdgesRef when graphData changes (used for sidebar connections)
+  useEffect(() => {
+    if (graphData) {
+      processedEdgesRef.current = graphData.edges.map((e, i) => ({ ...e, originalIndex: i }));
+    } else {
+      processedEdgesRef.current = [];
+    }
   }, [graphData]);
 
   const handleCreateGraph = () => {
@@ -1012,6 +1028,9 @@ export function VisualizationPage() {
             linkDistance={linkDistance}
             chargeStrength={chargeStrength}
             nodeSize={nodeSize}
+            curveSpacing={curveSpacing}
+            nodeLabelZoom={nodeLabelZoom}
+            edgeLabelZoom={edgeLabelZoom}
           />
         )}
 
@@ -1089,7 +1108,7 @@ export function VisualizationPage() {
                     onChange={e => setNodeSize(Number(e.target.value))}
                   />
                 </div>
-                <div className="mb-2">
+                <div className="mb-3">
                   <label className="form-label small d-flex justify-content-between">
                     <span>Edge Curve</span>
                     <span className="text-muted">{curveSpacing}</span>
@@ -1104,6 +1123,36 @@ export function VisualizationPage() {
                     onChange={e => setCurveSpacing(Number(e.target.value))}
                   />
                 </div>
+                <div className="mb-3">
+                  <label className="form-label small d-flex justify-content-between">
+                    <span>Node Labels (zoom)</span>
+                    <span className="text-muted">{nodeLabelZoom.toFixed(1)}</span>
+                  </label>
+                  <input
+                    type="range"
+                    className="form-range"
+                    min="0.5"
+                    max="5"
+                    step="0.5"
+                    value={nodeLabelZoom}
+                    onChange={e => setNodeLabelZoom(Number(e.target.value))}
+                  />
+                </div>
+                <div className="mb-2">
+                  <label className="form-label small d-flex justify-content-between">
+                    <span>Edge Labels (zoom)</span>
+                    <span className="text-muted">{edgeLabelZoom.toFixed(1)}</span>
+                  </label>
+                  <input
+                    type="range"
+                    className="form-range"
+                    min="0.5"
+                    max="5"
+                    step="0.5"
+                    value={edgeLabelZoom}
+                    onChange={e => setEdgeLabelZoom(Number(e.target.value))}
+                  />
+                </div>
                 <button
                   className="btn btn-sm btn-outline-secondary w-100 mt-2"
                   onClick={() => {
@@ -1111,6 +1160,8 @@ export function VisualizationPage() {
                     setChargeStrength(LAYOUT_DEFAULTS.chargeStrength);
                     setNodeSize(LAYOUT_DEFAULTS.nodeSize);
                     setCurveSpacing(LAYOUT_DEFAULTS.curveSpacing);
+                    setNodeLabelZoom(LAYOUT_DEFAULTS.nodeLabelZoom);
+                    setEdgeLabelZoom(LAYOUT_DEFAULTS.edgeLabelZoom);
                   }}
                 >
                   Reset to Defaults

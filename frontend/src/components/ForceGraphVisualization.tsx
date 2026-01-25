@@ -61,19 +61,15 @@ interface ForceGraphVisualizationProps {
   onBackgroundClick?: () => void;
   highlightedNodes?: Set<string>;
   highlightedEdges?: Set<number>;
-  selectedNode?: GraphNode | null;
-  selectedEdge?: GraphEdge | null;
   // Layout parameters
   linkDistance?: number;
   chargeStrength?: number;
   nodeSize?: number;
+  curveSpacing?: number;
   // Label visibility thresholds
   nodeLabelZoom?: number;
   edgeLabelZoom?: number;
   showLabels?: boolean;
-  // Callbacks for edge creation via shift+drag
-  onEdgeDragStart?: (sourceNode: GraphNode) => void;
-  onEdgeDragEnd?: (sourceNode: GraphNode, targetNode: GraphNode | null) => void;
 }
 
 // Format edge type from UPPER_SNAKE_CASE to Title Case
@@ -96,6 +92,7 @@ export function ForceGraphVisualization({
   linkDistance = 150,
   chargeStrength = -800,
   nodeSize = 12,
+  curveSpacing = 50,
   nodeLabelZoom = 1.5,
   edgeLabelZoom = 2.5,
   showLabels = true,
@@ -326,15 +323,42 @@ export function ForceGraphVisualization({
     });
 
     // Second pass: assign curvature based on count
+    // For odd count: middle edge is straight, others curved
+    // For even count: all curved in pairs
+    const baseCurvature = curveSpacing / 100; // Convert slider value (0-100) to curvature (0-1)
+
     const linksWithCurvature = processedLinks.map((link) => {
       const count = linkCounts[link.pairKey];
       let curvature = 0;
 
       if (count > 1) {
         const idx = linkIndices[link.pairKey]++;
-        // Alternate positive/negative curvature for multiple links
-        curvature = 0.2 + (idx * 0.15);
-        if (idx % 2 === 1) curvature *= -1;
+        const isOddCount = count % 2 === 1;
+        const middleIdx = Math.floor(count / 2);
+
+        if (isOddCount && idx === middleIdx) {
+          // Middle edge of odd count stays straight
+          curvature = 0;
+        } else {
+          // Calculate offset from middle
+          let offset: number;
+          if (isOddCount) {
+            // For odd: skip middle, offset from it
+            offset = idx < middleIdx ? middleIdx - idx : idx - middleIdx;
+          } else {
+            // For even: pair up from center
+            offset = Math.floor(Math.abs(idx - (count - 1) / 2)) + 0.5;
+          }
+
+          curvature = baseCurvature * offset;
+
+          // Alternate direction based on which side of middle
+          if (isOddCount) {
+            if (idx < middleIdx) curvature *= -1;
+          } else {
+            if (idx % 2 === 0) curvature *= -1;
+          }
+        }
       }
 
       return { ...link, curvature };
@@ -344,7 +368,7 @@ export function ForceGraphVisualization({
       nodes: graphData.nodes,
       links: linksWithCurvature,
     };
-  }, [graphData]);
+  }, [graphData, curveSpacing]);
 
   if (!processedGraphData) {
     return (
