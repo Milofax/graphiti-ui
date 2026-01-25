@@ -1315,16 +1315,28 @@ export function VisualizationPage() {
         <div className="card-body py-2">
           <div className="row align-items-center">
             <div className="col-auto">
-              <select
-                value={selectedGroup}
-                onChange={e => setSelectedGroup(e.target.value)}
-                className="form-select form-select-sm"
-              >
-                <option value="">All Groups</option>
-                {groups.map(g => (
-                  <option key={g} value={g}>{g}</option>
-                ))}
-              </select>
+              <div className="input-group input-group-sm">
+                <select
+                  value={groups.includes(selectedGroup) ? selectedGroup : ''}
+                  onChange={e => setSelectedGroup(e.target.value)}
+                  className="form-select form-select-sm"
+                  style={{ minWidth: '150px' }}
+                >
+                  <option value="">All Groups</option>
+                  {groups.map(g => (
+                    <option key={g} value={g}>{g}</option>
+                  ))}
+                </select>
+                <input
+                  type="text"
+                  className="form-control form-control-sm"
+                  placeholder="New graph..."
+                  style={{ maxWidth: '120px' }}
+                  value={!groups.includes(selectedGroup) && selectedGroup ? selectedGroup : ''}
+                  onChange={e => setSelectedGroup(e.target.value)}
+                  title="Type a new graph name to create it"
+                />
+              </div>
             </div>
             <div className="col-auto">
               <select
@@ -1346,13 +1358,13 @@ export function VisualizationPage() {
             <div className="col-auto text-secondary">
               {graphData && `${graphData.nodes.length} Nodes • ${graphData.edges.length} Edges`}
             </div>
+
+            {/* Spacer */}
+            <div className="col"></div>
+
+            {/* Action buttons group */}
             {selectedGroup && (
-              <div className="col-auto text-muted small" title="Hold Shift and drag from one node to another to create a relationship">
-                <kbd>Shift</kbd>+Drag to link nodes
-              </div>
-            )}
-            {selectedGroup && (
-              <div className="col-auto ms-auto d-flex gap-2">
+              <div className="col-auto d-flex align-items-center gap-2">
                 <button
                   onClick={openCreateNodeModal}
                   className="btn btn-sm btn-primary"
@@ -1369,6 +1381,10 @@ export function VisualizationPage() {
                   <IconLink size={16} className="me-1" />
                   Edge
                 </button>
+                <span className="text-muted small" title="Hold Shift and drag from one node to another">
+                  <kbd>Shift</kbd>+Drag
+                </span>
+                <span className="border-start mx-2" style={{ height: '20px' }}></span>
                 <button
                   onClick={() => setShowSendKnowledgeModal(true)}
                   className="btn btn-sm btn-outline-primary"
@@ -1379,6 +1395,11 @@ export function VisualizationPage() {
                 </button>
               </div>
             )}
+
+            {/* Spacer */}
+            <div className="col"></div>
+
+            {/* Delete button */}
             {selectedGroup && (
               <div className="col-auto">
                 <button
