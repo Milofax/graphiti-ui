@@ -414,8 +414,28 @@ export function ForceGraphVisualization({
     ...commonProps,
   };
 
+  // Handle zoom to fit (middle mouse button)
+  const handleZoomToFit = useCallback(() => {
+    const fg = is3D ? graphRef3D.current : graphRef2D.current;
+    if (fg) {
+      fg.zoomToFit?.(400);
+    }
+  }, [is3D]);
+
+  // Handle middle mouse button for zoom reset
+  const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    if (e.button === 1) { // Middle mouse button
+      e.preventDefault();
+      handleZoomToFit();
+    }
+  }, [handleZoomToFit]);
+
   return (
-    <div ref={containerRef} className="w-100 h-100 position-relative">
+    <div
+      ref={containerRef}
+      className="w-100 h-100 position-relative"
+      onMouseDown={handleMouseDown}
+    >
       {/* 2D/3D Toggle */}
       <div className="position-absolute top-0 end-0 m-2 z-3">
         <div className="btn-group btn-group-sm" role="group">
@@ -433,6 +453,16 @@ export function ForceGraphVisualization({
           >
             3D
           </button>
+        </div>
+      </div>
+
+      {/* Navigation Hints */}
+      <div className="position-absolute bottom-0 start-50 translate-middle-x mb-2 z-3">
+        <div className="d-flex gap-3 px-3 py-1 rounded" style={{ backgroundColor: 'rgba(0,0,0,0.5)', fontSize: '0.75rem', color: 'rgba(255,255,255,0.8)' }}>
+          <span>🖱️ Left: {is3D ? 'Rotate' : 'Select'}</span>
+          <span>🖱️ Right: Pan</span>
+          <span>⚙️ Wheel: Zoom</span>
+          <span>🖱️ Middle: Fit All</span>
         </div>
       </div>
 

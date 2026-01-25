@@ -463,6 +463,26 @@ export function VisualizationPage() {
     }
   }, [loadedEpisodes, loadEpisodeBackground]);
 
+  // Get a node by ID from graphData
+  const getNodeById = useCallback((id: string): Node | undefined => {
+    return graphData?.nodes.find(n => n.id === id);
+  }, [graphData]);
+
+  // Resolve edge source/target to Node object (handles both string IDs and Node objects)
+  const resolveEdgeSource = useCallback((edge: Edge): Node | undefined => {
+    if (typeof edge.source === 'string') {
+      return getNodeById(edge.source);
+    }
+    return edge.source as Node;
+  }, [getNodeById]);
+
+  const resolveEdgeTarget = useCallback((edge: Edge): Node | undefined => {
+    if (typeof edge.target === 'string') {
+      return getNodeById(edge.target);
+    }
+    return edge.target as Node;
+  }, [getNodeById]);
+
   // Get connected edges for a node
   const getConnectedEdges = useCallback((node: Node): Edge[] => {
     return processedEdgesRef.current.filter(edge => {
@@ -1391,8 +1411,9 @@ export function VisualizationPage() {
                   </label>
                   <div className="d-flex flex-column gap-1">
                     {getConnectedEdges(selectedNode).map((edge, idx) => {
-                      const source = edge.source as Node;
-                      const target = edge.target as Node;
+                      const source = resolveEdgeSource(edge);
+                      const target = resolveEdgeTarget(edge);
+                      if (!source || !target) return null;
                       const isOutgoing = source.id === selectedNode.id;
                       const otherNode = isOutgoing ? target : source;
 
@@ -1502,27 +1523,33 @@ export function VisualizationPage() {
             </div>
             <div className="card-body" style={{ overflowY: 'auto', flex: 1 }}>
               {/* Relationship flow visualization - no box */}
-              <div className="d-flex flex-wrap align-items-center justify-content-center gap-2 mb-3">
-                <span
-                  className="badge text-white"
-                  style={{ backgroundColor: getTypeColor((selectedEdge.source as Node).type || ''), flex: '1 1 auto', textAlign: 'center', minWidth: '80px', cursor: 'pointer' }}
-                  onClick={() => navigateToNode(selectedEdge.source as Node)}
-                  title="Click to view node"
-                >
-                  {(selectedEdge.source as Node).name || 'Source'}
-                </span>
-                <span className="text-muted flex-shrink-0">→</span>
-                <span className="text-secondary" style={{ flex: '0 0 auto', textAlign: 'center' }}>{formatEdgeType(selectedEdge.type)}</span>
-                <span className="text-muted flex-shrink-0">→</span>
-                <span
-                  className="badge text-white"
-                  style={{ backgroundColor: getTypeColor((selectedEdge.target as Node).type || ''), flex: '1 1 auto', textAlign: 'center', minWidth: '80px', cursor: 'pointer' }}
-                  onClick={() => navigateToNode(selectedEdge.target as Node)}
-                  title="Click to view node"
-                >
-                  {(selectedEdge.target as Node).name || 'Target'}
-                </span>
-              </div>
+              {(() => {
+                const sourceNode = resolveEdgeSource(selectedEdge);
+                const targetNode = resolveEdgeTarget(selectedEdge);
+                return (
+                  <div className="d-flex flex-wrap align-items-center justify-content-center gap-2 mb-3">
+                    <span
+                      className="badge text-white"
+                      style={{ backgroundColor: getTypeColor(sourceNode?.type || ''), flex: '1 1 auto', textAlign: 'center', minWidth: '80px', cursor: sourceNode ? 'pointer' : 'default' }}
+                      onClick={() => sourceNode && navigateToNode(sourceNode)}
+                      title="Click to view node"
+                    >
+                      {sourceNode?.name || 'Source'}
+                    </span>
+                    <span className="text-muted flex-shrink-0">→</span>
+                    <span className="text-secondary" style={{ flex: '0 0 auto', textAlign: 'center' }}>{formatEdgeType(selectedEdge.type)}</span>
+                    <span className="text-muted flex-shrink-0">→</span>
+                    <span
+                      className="badge text-white"
+                      style={{ backgroundColor: getTypeColor(targetNode?.type || ''), flex: '1 1 auto', textAlign: 'center', minWidth: '80px', cursor: targetNode ? 'pointer' : 'default' }}
+                      onClick={() => targetNode && navigateToNode(targetNode)}
+                      title="Click to view node"
+                    >
+                      {targetNode?.name || 'Target'}
+                    </span>
+                  </div>
+                );
+              })()}
 
               {isEditingEdge ? (
                 /* Edit Mode */
