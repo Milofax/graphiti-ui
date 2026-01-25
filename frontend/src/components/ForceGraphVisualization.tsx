@@ -1,5 +1,6 @@
 import { useRef, useState, useCallback, useEffect, useMemo } from 'react';
-import { ForceGraph2D, ForceGraph3D } from 'react-force-graph';
+import ForceGraph2D from 'react-force-graph-2d';
+import ForceGraph3D from 'react-force-graph-3d';
 import SpriteText from 'three-spritetext';
 import { useTheme } from '../contexts/ThemeContext';
 
