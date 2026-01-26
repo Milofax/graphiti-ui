@@ -740,13 +740,28 @@ export function VisualizationPage() {
       if (response.data.success) {
         setIsEditingNode(false);
         setEditNodeAttributes({});
+
+        const updatedName = normalizedName || selectedNode.name;
+        const updatedSummary = normalizedSummary || selectedNode.summary;
+
         // Update selected node with new values so sidebar shows updated data
         setSelectedNode({
           ...selectedNode,
-          name: normalizedName || selectedNode.name,
-          summary: normalizedSummary || selectedNode.summary,
+          name: updatedName,
+          summary: updatedSummary,
         });
-        refreshGraph();
+
+        // Update node in graphData without full reload
+        if (graphData) {
+          setGraphData({
+            ...graphData,
+            nodes: graphData.nodes.map(n =>
+              n.id === selectedNode.id
+                ? { ...n, name: updatedName, summary: updatedSummary }
+                : n
+            ),
+          });
+        }
       } else {
         setAlertMessage({ type: 'error', title: 'Update Failed', message: response.data.error });
       }
@@ -822,15 +837,31 @@ export function VisualizationPage() {
 
       if (response.data.success) {
         setIsEditingEdge(false);
+
+        const updatedType = normalizedName || selectedEdge.type;
+        const updatedFact = normalizedFact || selectedEdge.fact;
+
         // Update selected edge with new values so sidebar shows updated data
         setSelectedEdge({
           ...selectedEdge,
-          type: normalizedName || selectedEdge.type,
-          fact: normalizedFact || selectedEdge.fact,
+          type: updatedType,
+          fact: updatedFact,
         });
+
         // Also update the edit fields to show normalized values
         if (normalizedName) setEditEdgeName(normalizedName);
-        refreshGraph();
+
+        // Update edge in graphData without full reload
+        if (graphData) {
+          setGraphData({
+            ...graphData,
+            edges: graphData.edges.map(e =>
+              e.uuid === selectedEdge.uuid
+                ? { ...e, type: updatedType, fact: updatedFact }
+                : e
+            ),
+          });
+        }
       } else {
         setAlertMessage({ type: 'error', title: 'Update Failed', message: response.data.error });
       }
