@@ -384,6 +384,10 @@ export function VisualizationPage() {
 
   // Handle node click - highlight connected nodes and edges
   const handleNodeClick = useCallback((node: Node, edges: Edge[]) => {
+    // Cancel edit mode when clicking a different node
+    setIsEditingNode(false);
+    setEditNodeAttributes({});
+
     setSelectedNode(node);
     setSelectedEdge(null);
 
@@ -744,7 +748,7 @@ export function VisualizationPage() {
     }
   };
 
-  const startEditingNode = () => {
+  const startEditingNode = async () => {
     if (!selectedNode) return;
     setEditNodeName(selectedNode.name || '');
     setEditNodeSummary(selectedNode.summary || '');
@@ -757,10 +761,22 @@ export function VisualizationPage() {
       });
     }
 
+    // Fetch entity types from DB if not loaded yet
+    let currentEntityTypes = entityTypes;
+    if (currentEntityTypes.length === 0) {
+      try {
+        const etResponse = await api.get('/entity-types');
+        currentEntityTypes = etResponse.data?.entity_types || [];
+        setEntityTypes(currentEntityTypes);
+      } catch (err) {
+        console.error('Failed to load entity types:', err);
+      }
+    }
+
     // Add entity type fields (if defined) with empty values for missing fields
     const nodeType = selectedNode.type;
     if (nodeType) {
-      const entityType = entityTypes.find(et => et.name === nodeType);
+      const entityType = currentEntityTypes.find(et => et.name === nodeType);
       if (entityType?.fields) {
         entityType.fields.forEach(field => {
           if (!(field.name in attrs)) {
