@@ -233,6 +233,46 @@ async def delete_graph(group_id: str, current_user: CurrentUser) -> dict:
         return {"success": False, "error": str(e)}
 
 
+class RenameGroupRequest(BaseModel):
+    """Request to rename a graph/group."""
+
+    new_name: str
+
+
+@router.put("/group/{group_id}/rename")
+async def rename_graph(group_id: str, request: RenameGroupRequest, current_user: CurrentUser) -> dict:
+    """Rename a graph (group_id) in FalkorDB.
+
+    Args:
+        group_id: Current graph/group name to rename
+        request.new_name: New name for the graph/group
+    """
+    try:
+        if not request.new_name or not request.new_name.strip():
+            return {"success": False, "error": "New name cannot be empty"}
+
+        new_name = request.new_name.strip()
+        if new_name == group_id:
+            return {"success": False, "error": "New name is the same as current name"}
+
+        client = get_falkordb_client()
+        success = client.rename_graph(group_id, new_name)
+
+        if success:
+            return {
+                "success": True,
+                "message": f"Graph renamed from '{group_id}' to '{new_name}'",
+                "new_name": new_name,
+            }
+        else:
+            return {
+                "success": False,
+                "error": f"Failed to rename graph. Check if '{group_id}' exists and '{new_name}' is not already taken.",
+            }
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
 @router.get("/episode/{uuid}")
 async def get_episode_details(uuid: str, current_user: CurrentUser) -> dict:
     """Get detailed information about a specific episode."""

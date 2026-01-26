@@ -299,6 +299,44 @@ class FalkorDBClient:
             print(f"Error deleting graph {graph_name}: {e}")
             return False
 
+    def rename_graph(self, old_name: str, new_name: str) -> bool:
+        """Rename a graph (group_id) in FalkorDB.
+
+        Args:
+            old_name: Current graph/group name
+            new_name: New graph/group name
+
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            params = self._get_connection_params()
+            from redis import Redis
+            r = Redis(
+                host=params["host"],
+                port=params["port"],
+                password=params["password"],
+            )
+            # Check if old graph exists
+            if not r.exists(old_name):
+                print(f"Graph {old_name} does not exist")
+                return False
+            # Check if new name already exists
+            if r.exists(new_name):
+                print(f"Graph {new_name} already exists")
+                return False
+            # Rename the graph key
+            r.rename(old_name, new_name)
+            # Rename telemetry key if it exists
+            old_telemetry = f"telemetry{{{old_name}}}"
+            new_telemetry = f"telemetry{{{new_name}}}"
+            if r.exists(old_telemetry):
+                r.rename(old_telemetry, new_telemetry)
+            return True
+        except Exception as e:
+            print(f"Error renaming graph {old_name} to {new_name}: {e}")
+            return False
+
     def get_episode_by_uuid(self, episode_uuid: str, group_id: str | None = None) -> dict | None:
         """Get an episode node by UUID.
 

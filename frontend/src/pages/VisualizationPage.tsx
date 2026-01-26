@@ -245,6 +245,10 @@ export function VisualizationPage() {
   const [showCreateGraphModal, setShowCreateGraphModal] = useState(false);
   const [newGraphId, setNewGraphId] = useState('');
 
+  // Rename graph modal state
+  const [showRenameGraphModal, setShowRenameGraphModal] = useState(false);
+  const [renameGraphNewName, setRenameGraphNewName] = useState('');
+
   // Extract unique types from visible nodes and build color map (memoized)
   const nodeTypes = useMemo(() =>
     graphData
@@ -301,6 +305,43 @@ export function VisualizationPage() {
   const ensureGroupInList = () => {
     if (selectedGroup && !groups.includes(selectedGroup)) {
       setGroups(prev => [...prev, selectedGroup].sort());
+    }
+  };
+
+  const handleRenameGraph = async () => {
+    if (!selectedGroup || !renameGraphNewName.trim()) return;
+
+    const newName = renameGraphNewName.trim();
+    if (newName === selectedGroup) {
+      setShowRenameGraphModal(false);
+      return;
+    }
+
+    setIsSaving(true);
+    try {
+      const response = await api.put(`/graph/group/${encodeURIComponent(selectedGroup)}/rename`, {
+        new_name: newName,
+      });
+
+      if (response.data.success) {
+        // Update groups list
+        setGroups(prev => prev.map(g => g === selectedGroup ? newName : g).sort());
+        // Update selected group
+        setSelectedGroup(newName);
+        setShowRenameGraphModal(false);
+        setRenameGraphNewName('');
+        setAlertMessage({
+          type: 'success',
+          title: 'Graph Renamed',
+          message: `Graph renamed from "${selectedGroup}" to "${newName}"`,
+        });
+      } else {
+        setAlertMessage({ type: 'error', title: 'Rename Failed', message: response.data.error });
+      }
+    } catch (err: any) {
+      setAlertMessage({ type: 'error', title: 'Error', message: err.message });
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -988,6 +1029,18 @@ export function VisualizationPage() {
                     <option key={g} value={g}>{g}</option>
                   ))}
                 </select>
+                {selectedGroup && (
+                  <button
+                    className="btn btn-sm btn-outline-secondary"
+                    onClick={() => {
+                      setRenameGraphNewName(selectedGroup);
+                      setShowRenameGraphModal(true);
+                    }}
+                    title="Rename graph"
+                  >
+                    <IconEdit size={16} />
+                  </button>
+                )}
                 <button
                   className="btn btn-sm btn-outline-primary"
                   onClick={() => setShowCreateGraphModal(true)}
@@ -2176,6 +2229,65 @@ John Smith is a software engineer at Acme Corp. He has been working there since 
                   disabled={!newGraphId.trim()}
                 >
                   {groups.includes(newGraphId.trim()) ? 'Select Graph' : 'Create Graph'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Rename Graph Modal */}
+      {showRenameGraphModal && (
+        <div className="modal modal-blur show d-block" tabIndex={-1} style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
+          <div className="modal-dialog modal-sm modal-dialog-centered">
+            <div className="modal-content">
+              <div className="modal-header">
+                <h5 className="modal-title">Rename Graph</h5>
+                <button
+                  type="button"
+                  className="btn-close"
+                  onClick={() => { setShowRenameGraphModal(false); setRenameGraphNewName(''); }}
+                />
+              </div>
+              <div className="modal-body">
+                <div className="mb-3">
+                  <label className="form-label">Current Name</label>
+                  <input
+                    type="text"
+                    className="form-control"
+                    value={selectedGroup}
+                    disabled
+                  />
+                </div>
+                <div className="mb-0">
+                  <label className="form-label">New Name</label>
+                  <input
+                    type="text"
+                    className="form-control"
+                    placeholder="Enter new graph name"
+                    value={renameGraphNewName}
+                    onChange={e => setRenameGraphNewName(e.target.value)}
+                    onKeyDown={e => e.key === 'Enter' && handleRenameGraph()}
+                    autoFocus
+                  />
+                  {groups.includes(renameGraphNewName.trim()) && renameGraphNewName.trim() !== selectedGroup && (
+                    <div className="form-text text-warning">A graph with this name already exists</div>
+                  )}
+                </div>
+              </div>
+              <div className="modal-footer">
+                <button
+                  className="btn"
+                  onClick={() => { setShowRenameGraphModal(false); setRenameGraphNewName(''); }}
+                >
+                  Cancel
+                </button>
+                <button
+                  className="btn btn-primary"
+                  onClick={handleRenameGraph}
+                  disabled={isSaving || !renameGraphNewName.trim() || renameGraphNewName.trim() === selectedGroup || groups.includes(renameGraphNewName.trim())}
+                >
+                  {isSaving ? 'Renaming...' : 'Rename'}
                 </button>
               </div>
             </div>
