@@ -397,6 +397,209 @@ class GraphitiClient:
             group_id=group_id,
         )
 
+    # =========================================================================
+    # Graph Visualization API (for UI)
+    # =========================================================================
+
+    async def get_graph_data(
+        self, limit: int = 500, group_id: str | None = None
+    ) -> dict:
+        """Get graph data for visualization.
+
+        Args:
+            limit: Maximum nodes to return
+            group_id: Optional filter by group_id
+        """
+        try:
+            params = {"limit": limit}
+            if group_id:
+                params["group_id"] = group_id
+
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                response = await client.get(
+                    f"{self.base_url}/graph/data",
+                    params=params,
+                )
+                if response.status_code == 200:
+                    return response.json()
+                return {"success": False, "error": f"HTTP {response.status_code}"}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    async def get_group_ids(self) -> dict:
+        """Get all available group IDs."""
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                response = await client.get(f"{self.base_url}/graph/groups")
+                if response.status_code == 200:
+                    return response.json()
+                return {"success": False, "group_ids": [], "error": f"HTTP {response.status_code}"}
+        except Exception as e:
+            return {"success": False, "group_ids": [], "error": str(e)}
+
+    async def get_node_details(self, uuid: str, group_id: str | None = None) -> dict:
+        """Get detailed information about a specific node.
+
+        Args:
+            uuid: Node UUID
+            group_id: Optional graph to search in
+        """
+        try:
+            params = {}
+            if group_id:
+                params["group_id"] = group_id
+
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                response = await client.get(
+                    f"{self.base_url}/graph/node/{uuid}",
+                    params=params,
+                )
+                if response.status_code == 200:
+                    return response.json()
+                return {"success": False, "error": f"HTTP {response.status_code}"}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    async def get_edge_details(self, uuid: str, group_id: str | None = None) -> dict:
+        """Get detailed information about a specific edge.
+
+        Args:
+            uuid: Edge UUID
+            group_id: Optional graph to search in
+        """
+        try:
+            params = {}
+            if group_id:
+                params["group_id"] = group_id
+
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                response = await client.get(
+                    f"{self.base_url}/graph/edge/{uuid}",
+                    params=params,
+                )
+                if response.status_code == 200:
+                    return response.json()
+                return {"success": False, "error": f"HTTP {response.status_code}"}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    async def get_episode_details(self, uuid: str, group_id: str | None = None) -> dict:
+        """Get detailed information about a specific episode.
+
+        Args:
+            uuid: Episode UUID
+            group_id: Optional graph to search in
+        """
+        try:
+            params = {}
+            if group_id:
+                params["group_id"] = group_id
+
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                response = await client.get(
+                    f"{self.base_url}/graph/episode/{uuid}",
+                    params=params,
+                )
+                if response.status_code == 200:
+                    return response.json()
+                return {"success": False, "error": f"HTTP {response.status_code}"}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    async def delete_graph(self, group_id: str) -> dict:
+        """Delete an entire graph (group).
+
+        WARNING: This permanently deletes all nodes and edges.
+
+        Args:
+            group_id: Graph/group ID to delete
+        """
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                response = await client.delete(f"{self.base_url}/graph/group/{group_id}")
+                if response.status_code == 200:
+                    return response.json()
+                return {"success": False, "error": f"HTTP {response.status_code}"}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    async def rename_graph(self, group_id: str, new_name: str) -> dict:
+        """Rename a graph (group_id).
+
+        Args:
+            group_id: Current graph/group name
+            new_name: New name for the graph
+        """
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                response = await client.put(
+                    f"{self.base_url}/graph/group/{group_id}/rename",
+                    json={"new_name": new_name},
+                    headers={"Content-Type": "application/json"},
+                )
+                if response.status_code == 200:
+                    return response.json()
+                return {"success": False, "error": f"HTTP {response.status_code}"}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    async def get_graph_stats(self, group_id: str | None = None) -> dict:
+        """Get graph statistics.
+
+        Args:
+            group_id: Optional filter by group_id
+        """
+        try:
+            params = {}
+            if group_id:
+                params["group_id"] = group_id
+
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                response = await client.get(
+                    f"{self.base_url}/graph/stats",
+                    params=params,
+                )
+                if response.status_code == 200:
+                    return response.json()
+                return {"success": False, "stats": {}, "error": f"HTTP {response.status_code}"}
+        except Exception as e:
+            return {"success": False, "stats": {}, "error": str(e)}
+
+    async def get_queue_status(self) -> dict:
+        """Get queue processing status for UI indicator."""
+        try:
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                response = await client.get(f"{self.base_url}/queue/status")
+                if response.status_code == 200:
+                    return response.json()
+                return {"success": False, "processing": False, "error": f"HTTP {response.status_code}"}
+        except Exception as e:
+            return {"success": False, "processing": False, "error": str(e)}
+
+    async def execute_query(self, query: str, group_id: str | None = None) -> dict:
+        """Execute a read-only Cypher query.
+
+        Args:
+            query: Cypher query string
+            group_id: Graph to execute against
+        """
+        try:
+            payload = {"query": query}
+            if group_id:
+                payload["group_id"] = group_id
+
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                response = await client.post(
+                    f"{self.base_url}/query",
+                    json=payload,
+                    headers={"Content-Type": "application/json"},
+                )
+                if response.status_code == 200:
+                    return response.json()
+                return {"success": False, "error": f"HTTP {response.status_code}"}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
 
 # Global client instance
 _client: GraphitiClient | None = None

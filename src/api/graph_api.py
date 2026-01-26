@@ -1,12 +1,13 @@
-"""Graph API routes for visualization data."""
+"""Graph API routes for visualization data.
+
+These routes proxy to the Graphiti MCP server which handles the database access.
+This ensures database abstraction (FalkorDB vs Neo4j) is handled by Graphiti.
+"""
 
 from fastapi import APIRouter, Query
 from pydantic import BaseModel
-import httpx
 
 from ..auth.dependencies import CurrentUser
-from ..config import get_settings
-from ..services.falkordb_service import get_falkordb_client
 from ..services.graphiti_service import get_graphiti_client
 
 router = APIRouter()
@@ -41,10 +42,22 @@ async def get_graph_data(
     """Get graph data for visualization.
 
     Returns nodes, edges, and triplets in a format suitable for D3.js visualization.
+    Proxies to MCP server /graph/data endpoint.
     """
     try:
-        client = get_falkordb_client()
-        data = client.get_graph_data(limit=limit, group_id=group_id)
+        client = get_graphiti_client()
+        data = await client.get_graph_data(limit=limit, group_id=group_id)
+
+        if not data.get("success", False):
+            return GraphDataResponse(
+                success=False,
+                nodes=[],
+                edges=[],
+                triplets=[],
+                labels=[],
+                stats={"node_count": 0, "edge_count": 0, "label_count": 0},
+                error=data.get("error", "Unknown error"),
+            )
 
         # Transform nodes to frontend expected format
         # Include all relevant properties for node details panel
@@ -62,7 +75,7 @@ async def get_graph_data(
                     if not k.endswith("_embedding")  # Exclude embedding vectors
                 },
             }
-            for node in data["nodes"]
+            for node in data.get("nodes", [])
         ]
 
         # Transform edges to frontend expected format
@@ -82,16 +95,16 @@ async def get_graph_data(
                 "expired_at": edge.get("expired_at"),
                 "episodes": edge.get("episodes", []),
             }
-            for edge in data["edges"]
+            for edge in data.get("edges", [])
         ]
 
         return GraphDataResponse(
             success=True,
             nodes=transformed_nodes,
             edges=transformed_edges,
-            triplets=data["triplets"],
-            labels=data["labels"],
-            stats=data["stats"],
+            triplets=data.get("triplets", []),
+            labels=data.get("labels", []),
+            stats=data.get("stats", {}),
         )
     except Exception as e:
         return GraphDataResponse(
@@ -109,12 +122,19 @@ async def get_graph_data(
 async def get_group_ids(current_user: CurrentUser) -> GroupIdsResponse:
     """Get available group IDs for filtering."""
     try:
-        client = get_falkordb_client()
-        group_ids = client.get_group_ids()
+        client = get_graphiti_client()
+        result = await client.get_group_ids()
+
+        if not result.get("success", False):
+            return GroupIdsResponse(
+                success=False,
+                group_ids=[],
+                error=result.get("error"),
+            )
 
         return GroupIdsResponse(
             success=True,
-            group_ids=group_ids,
+            group_ids=result.get("group_ids", []),
         )
     except Exception as e:
         return GroupIdsResponse(
@@ -125,85 +145,57 @@ async def get_group_ids(current_user: CurrentUser) -> GroupIdsResponse:
 
 
 @router.get("/node/{uuid}")
-async def get_node_details(uuid: str, current_user: CurrentUser) -> dict:
+async def get_node_details(
+    uuid: str,
+    current_user: CurrentUser,
+    group_id: str | None = Query(default=None, description="Graph to search in"),
+) -> dict:
     """Get detailed information about a specific node."""
     try:
-        client = get_falkordb_client()
-        query = f"""
-        MATCH (n:Entity {{uuid: '{uuid}'}})
-        RETURN n
-        LIMIT 1
-        """
-        results = client.execute_query(query)
+        client = get_graphiti_client()
+        result = await client.get_node_details(uuid, group_id=group_id)
 
-        if results and "n" in results[0]:
-            node_data = results[0]["n"]
-            props = node_data.get("properties", {})
-            labels = node_data.get("labels", [])
-
+        if result.get("success"):
+            node = result.get("node", {})
             return {
                 "success": True,
                 "node": {
-                    "uuid": props.get("uuid", ""),
-                    "name": props.get("name", "Unknown"),
-                    "summary": props.get("summary", ""),
-                    "labels": labels,
-                    "group_id": props.get("group_id", ""),
-                    "created_at": props.get("created_at", ""),
-                    "attributes": props,
+                    "uuid": node.get("uuid", ""),
+                    "name": node.get("name", "Unknown"),
+                    "summary": node.get("summary", ""),
+                    "labels": node.get("labels", []),
+                    "group_id": node.get("group_id", ""),
+                    "created_at": node.get("created_at", ""),
+                    "attributes": node,  # Full node data as attributes
                 },
             }
 
-        return {"success": False, "error": "Node not found"}
+        return {"success": False, "error": result.get("error", "Node not found")}
 
     except Exception as e:
         return {"success": False, "error": str(e)}
 
 
 @router.get("/edge/{uuid}")
-async def get_edge_details(uuid: str, current_user: CurrentUser) -> dict:
+async def get_edge_details(
+    uuid: str,
+    current_user: CurrentUser,
+    group_id: str | None = Query(default=None, description="Graph to search in"),
+) -> dict:
     """Get detailed information about a specific edge."""
     try:
-        client = get_falkordb_client()
-        query = f"""
-        MATCH (s:Entity)-[r {{uuid: '{uuid}'}}]->(t:Entity)
-        RETURN s, r, t
-        LIMIT 1
-        """
-        results = client.execute_query(query)
+        client = get_graphiti_client()
+        result = await client.get_edge_details(uuid, group_id=group_id)
 
-        if results:
-            row = results[0]
-            source = row.get("s", {})
-            target = row.get("t", {})
-            edge = row.get("r", {})
-
-            source_props = source.get("properties", {}) if isinstance(source, dict) else {}
-            target_props = target.get("properties", {}) if isinstance(target, dict) else {}
-            edge_props = edge.get("properties", {}) if isinstance(edge, dict) else {}
-
+        if result.get("success"):
             return {
                 "success": True,
-                "edge": {
-                    "uuid": edge_props.get("uuid", ""),
-                    "name": edge_props.get("name", ""),
-                    "fact": edge_props.get("fact", ""),
-                    "type": edge.get("type", "") if isinstance(edge, dict) else "",
-                    "created_at": edge_props.get("created_at", ""),
-                    "valid_at": edge_props.get("valid_at"),
-                    "expired_at": edge_props.get("expired_at"),
-                },
-                "source": {
-                    "uuid": source_props.get("uuid", ""),
-                    "name": source_props.get("name", "Unknown"),
-                },
-                "target": {
-                    "uuid": target_props.get("uuid", ""),
-                    "name": target_props.get("name", "Unknown"),
-                },
+                "edge": result.get("edge", {}),
+                "source": result.get("source", {}),
+                "target": result.get("target", {}),
             }
 
-        return {"success": False, "error": "Edge not found"}
+        return {"success": False, "error": result.get("error", "Edge not found")}
 
     except Exception as e:
         return {"success": False, "error": str(e)}
@@ -211,24 +203,23 @@ async def get_edge_details(uuid: str, current_user: CurrentUser) -> dict:
 
 @router.delete("/group/{group_id}")
 async def delete_graph(group_id: str, current_user: CurrentUser) -> dict:
-    """Delete an entire graph (group) from FalkorDB.
+    """Delete an entire graph (group) via MCP server.
 
     WARNING: This permanently deletes all nodes and edges in this graph.
     """
     try:
-        client = get_falkordb_client()
-        success = client.delete_graph(group_id)
+        client = get_graphiti_client()
+        result = await client.delete_graph(group_id)
 
-        if success:
+        if result.get("success"):
             return {
                 "success": True,
-                "message": f"Graph '{group_id}' deleted successfully",
+                "message": result.get("message", f"Graph '{group_id}' deleted successfully"),
             }
-        else:
-            return {
-                "success": False,
-                "error": f"Failed to delete graph '{group_id}'",
-            }
+        return {
+            "success": False,
+            "error": result.get("error", f"Failed to delete graph '{group_id}'"),
+        }
     except Exception as e:
         return {"success": False, "error": str(e)}
 
@@ -241,7 +232,7 @@ class RenameGroupRequest(BaseModel):
 
 @router.put("/group/{group_id}/rename")
 async def rename_graph(group_id: str, request: RenameGroupRequest, current_user: CurrentUser) -> dict:
-    """Rename a graph (group_id) in FalkorDB.
+    """Rename a graph (group_id) via MCP server.
 
     Args:
         group_id: Current graph/group name to rename
@@ -255,80 +246,97 @@ async def rename_graph(group_id: str, request: RenameGroupRequest, current_user:
         if new_name == group_id:
             return {"success": False, "error": "New name is the same as current name"}
 
-        client = get_falkordb_client()
-        success = client.rename_graph(group_id, new_name)
+        client = get_graphiti_client()
+        result = await client.rename_graph(group_id, new_name)
 
-        if success:
+        if result.get("success"):
             return {
                 "success": True,
-                "message": f"Graph renamed from '{group_id}' to '{new_name}'",
+                "message": result.get("message", f"Graph renamed from '{group_id}' to '{new_name}'"),
                 "new_name": new_name,
             }
-        else:
-            return {
-                "success": False,
-                "error": f"Failed to rename graph. Check if '{group_id}' exists and '{new_name}' is not already taken.",
-            }
+        return {
+            "success": False,
+            "error": result.get("error", "Failed to rename graph"),
+        }
     except Exception as e:
         return {"success": False, "error": str(e)}
 
 
 @router.get("/episode/{uuid}")
-async def get_episode_details(uuid: str, current_user: CurrentUser) -> dict:
+async def get_episode_details(
+    uuid: str,
+    current_user: CurrentUser,
+    group_id: str | None = Query(default=None, description="Graph to search in"),
+) -> dict:
     """Get detailed information about a specific episode."""
     try:
-        client = get_falkordb_client()
-        episode = client.get_episode_by_uuid(uuid)
+        client = get_graphiti_client()
+        result = await client.get_episode_details(uuid, group_id=group_id)
 
-        if episode:
+        if result.get("success"):
             return {
                 "success": True,
-                "episode": episode,
+                "episode": result.get("episode", {}),
             }
 
-        return {"success": False, "error": "Episode not found"}
+        return {"success": False, "error": result.get("error", "Episode not found")}
 
     except Exception as e:
         return {"success": False, "error": str(e)}
 
 
 @router.get("/stats")
-async def get_graph_stats(current_user: CurrentUser) -> dict:
+async def get_graph_stats(
+    current_user: CurrentUser,
+    group_id: str | None = Query(default=None, description="Filter by group ID"),
+) -> dict:
     """Get graph statistics."""
     try:
-        client = get_falkordb_client()
+        client = get_graphiti_client()
+        result = await client.get_graph_stats(group_id=group_id)
 
-        # Count nodes
-        node_count_result = client.execute_query("MATCH (n:Entity) RETURN count(n) as count")
-        node_count = node_count_result[0]["count"] if node_count_result else 0
-
-        # Count edges
-        edge_count_result = client.execute_query("MATCH ()-[r]->() RETURN count(r) as count")
-        edge_count = edge_count_result[0]["count"] if edge_count_result else 0
-
-        # Count labels
-        label_result = client.execute_query("""
-            MATCH (n:Entity)
-            UNWIND labels(n) as label
-            RETURN DISTINCT label
-        """)
-        label_count = len(label_result) if label_result else 0
+        if result.get("success"):
+            return {
+                "success": True,
+                "stats": result.get("stats", {}),
+            }
 
         return {
-            "success": True,
-            "stats": {
-                "node_count": node_count,
-                "edge_count": edge_count,
-                "label_count": label_count,
-            },
+            "success": False,
+            "error": result.get("error"),
+            "stats": {"node_count": 0, "edge_count": 0, "label_count": 0},
         }
 
     except Exception as e:
         return {"success": False, "error": str(e), "stats": {}}
 
 
+@router.get("/queue/status")
+async def get_queue_status(current_user: CurrentUser) -> dict:
+    """Get queue processing status for UI indicator."""
+    try:
+        client = get_graphiti_client()
+        result = await client.get_queue_status()
+
+        return {
+            "success": result.get("success", False),
+            "processing": result.get("processing", False),
+            "pending_count": result.get("pending_count", 0),
+            "active_workers": result.get("active_workers", 0),
+        }
+    except Exception as e:
+        return {
+            "success": False,
+            "processing": False,
+            "pending_count": 0,
+            "active_workers": 0,
+            "error": str(e),
+        }
+
+
 # ============================================
-# Graph Editor Endpoints
+# Graph Editor Endpoints (proxy to MCP server)
 # ============================================
 
 
@@ -383,8 +391,8 @@ async def create_node_direct(request: CreateNodeDirectRequest, current_user: Cur
     Creates the entity exactly as specified with embeddings only.
     """
     try:
-        graphiti = get_graphiti_client()
-        result = await graphiti.create_entity_direct(
+        client = get_graphiti_client()
+        result = await client.create_entity_direct(
             name=request.name,
             entity_type=request.entity_type,
             summary=request.summary,
@@ -412,8 +420,8 @@ async def create_edge_direct(request: CreateEdgeDirectRequest, current_user: Cur
     Creates the relationship exactly as specified with embeddings only.
     """
     try:
-        graphiti = get_graphiti_client()
-        result = await graphiti.create_edge_direct(
+        client = get_graphiti_client()
+        result = await client.create_edge_direct(
             source_uuid=request.source_uuid,
             target_uuid=request.target_uuid,
             name=request.relationship_type,
@@ -442,8 +450,8 @@ async def send_knowledge(request: SendKnowledgeRequest, current_user: CurrentUse
     Results appear asynchronously after processing.
     """
     try:
-        graphiti = get_graphiti_client()
-        result = await graphiti.send_knowledge(
+        client = get_graphiti_client()
+        result = await client.send_knowledge(
             content=request.content,
             group_id=request.group_id,
         )
@@ -464,15 +472,15 @@ async def send_knowledge(request: SendKnowledgeRequest, current_user: CurrentUse
 async def update_node(
     uuid: str, request: UpdateNodeRequest, current_user: CurrentUser, group_id: str | None = None
 ) -> dict:
-    """Update a node's properties via REST API (includes embedding regeneration).
+    """Update a node's properties via MCP server (includes embedding regeneration).
 
     Args:
         uuid: Node UUID to update
         group_id: Graph/group ID (required for FalkorDB)
     """
     try:
-        graphiti = get_graphiti_client()
-        result = await graphiti.update_entity_node(
+        client = get_graphiti_client()
+        result = await client.update_entity_node(
             uuid=uuid,
             name=request.name,
             summary=request.summary,
@@ -488,15 +496,15 @@ async def update_node(
 async def update_edge(
     uuid: str, request: UpdateEdgeRequest, current_user: CurrentUser, group_id: str | None = None
 ) -> dict:
-    """Update an edge's properties via REST API (includes embedding regeneration).
+    """Update an edge's properties via MCP server (includes embedding regeneration).
 
     Args:
         uuid: Edge UUID to update
         group_id: Graph/group ID (required for FalkorDB)
     """
     try:
-        graphiti = get_graphiti_client()
-        result = await graphiti.update_entity_edge(
+        client = get_graphiti_client()
+        result = await client.update_entity_edge(
             uuid=uuid,
             name=request.name,
             fact=request.fact,
@@ -510,7 +518,7 @@ async def update_edge(
 
 @router.delete("/node/{uuid}")
 async def delete_node(uuid: str, current_user: CurrentUser, group_id: str | None = None) -> dict:
-    """Delete a node via MCP delete_entity_node tool.
+    """Delete a node via MCP server.
 
     This removes the entity and all connected edges from the graph.
 
@@ -519,8 +527,8 @@ async def delete_node(uuid: str, current_user: CurrentUser, group_id: str | None
         group_id: Graph/group ID (required for FalkorDB)
     """
     try:
-        graphiti = get_graphiti_client()
-        result = await graphiti.delete_entity_node(uuid, group_id=group_id)
+        client = get_graphiti_client()
+        result = await client.delete_entity_node(uuid, group_id=group_id)
 
         if result.get("success"):
             return {
@@ -536,15 +544,15 @@ async def delete_node(uuid: str, current_user: CurrentUser, group_id: str | None
 
 @router.delete("/edge/{uuid}")
 async def delete_edge(uuid: str, current_user: CurrentUser, group_id: str | None = None) -> dict:
-    """Delete an edge via MCP delete_entity_edge tool.
+    """Delete an edge via MCP server.
 
     Args:
         uuid: Edge UUID to delete
         group_id: Graph/group ID (required for FalkorDB)
     """
     try:
-        graphiti = get_graphiti_client()
-        result = await graphiti.delete_entity_edge(uuid, group_id=group_id)
+        client = get_graphiti_client()
+        result = await client.delete_entity_edge(uuid, group_id=group_id)
 
         if result.get("success"):
             return {

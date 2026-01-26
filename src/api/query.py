@@ -1,11 +1,14 @@
-"""Query API routes."""
+"""Query API routes.
+
+These routes proxy to the Graphiti MCP server which handles database access.
+This ensures database abstraction (FalkorDB vs Neo4j) is handled by Graphiti.
+"""
 
 from fastapi import APIRouter
 from pydantic import BaseModel
 
 from ..auth.dependencies import CurrentUser
 from ..services.graphiti_service import get_graphiti_client
-from ..services.falkordb_service import get_falkordb_client
 
 router = APIRouter()
 
@@ -113,99 +116,65 @@ class QueryRequest(BaseModel):
     """Query request with optional graph selection."""
 
     query: str
-    graph_id: str | None = None  # If None, query all graphs
-
-
-def convert_value(value):
-    """Safely convert FalkorDB values to JSON-serializable types."""
-    if value is None:
-        return None
-    # Node
-    if hasattr(value, 'labels') and hasattr(value, 'properties'):
-        props = {}
-        if value.properties:
-            for k, v in value.properties.items():
-                # Skip large embedding arrays
-                if 'embedding' in k.lower():
-                    props[k] = f"[{len(v)} floats]" if isinstance(v, list) else v
-                else:
-                    props[k] = convert_value(v)
-        return {
-            "type": "node",
-            "labels": list(value.labels) if value.labels else [],
-            "properties": props,
-        }
-    # Edge
-    if hasattr(value, 'relation') and hasattr(value, 'src_node'):
-        props = {}
-        if value.properties:
-            for k, v in value.properties.items():
-                if 'embedding' in k.lower():
-                    props[k] = f"[{len(v)} floats]" if isinstance(v, list) else v
-                else:
-                    props[k] = convert_value(v)
-        return {
-            "type": "edge",
-            "relation": value.relation,
-            "properties": props,
-        }
-    # List
-    if isinstance(value, list):
-        return [convert_value(v) for v in value]
-    # Dict
-    if isinstance(value, dict):
-        return {k: convert_value(v) for k, v in value.items()}
-    return value
+    graph_id: str | None = None  # If None, query the default graph
 
 
 @router.post("")
 @router.post("/")
 async def execute_query(request: QueryRequest, current_user: CurrentUser) -> dict:
-    """Execute Cypher query against FalkorDB."""
+    """Execute Cypher query via MCP server.
+
+    Note: Only read-only queries are allowed (no DELETE, CREATE, MERGE, SET).
+    """
     try:
-        from falkordb import FalkorDB
-        import os
+        client = get_graphiti_client()
 
-        client = get_falkordb_client()
-
-        # Determine which graphs to query
+        # If querying specific graph
         if request.graph_id:
-            group_ids = [request.graph_id]
-        else:
-            group_ids = client.get_group_ids()
+            result = await client.execute_query(request.query, group_id=request.graph_id)
+
+            if result.get("success"):
+                return {
+                    "query": request.query,
+                    "graph_id": request.graph_id,
+                    "results": [{
+                        "graph": request.graph_id,
+                        "rows": result.get("results", []),
+                        "count": result.get("count", 0),
+                    }],
+                    "success": True,
+                }
+            return {
+                "query": request.query,
+                "results": [{
+                    "graph": request.graph_id,
+                    "rows": [],
+                    "count": 0,
+                    "error": result.get("error"),
+                }],
+                "success": False,
+                "error": result.get("error"),
+            }
+
+        # Query all graphs
+        groups_result = await client.get_group_ids()
+        group_ids = groups_result.get("group_ids", [])
 
         all_results = []
         for gid in group_ids:
-            try:
-                db = FalkorDB(
-                    host=os.environ.get("FALKORDB_HOST", "falkordb"),
-                    port=int(os.environ.get("FALKORDB_PORT", "6379")),
-                    password=os.environ.get("FALKORDB_PASSWORD"),
-                )
-                graph = db.select_graph(gid)
-                result = graph.query(request.query, timeout=10000)  # 10 seconds
-
-                # Convert result to list of dicts
-                rows = []
-                for record in result.result_set:
-                    row = {}
-                    for i, header in enumerate(result.header):
-                        # Header can be tuple or list: [type_id, name] or (type_id, name)
-                        col_name = header[1] if isinstance(header, (tuple, list)) else str(header)
-                        row[col_name] = convert_value(record[i])
-                    rows.append(row)
-
+            result = await client.execute_query(request.query, group_id=gid)
+            if result.get("success"):
                 all_results.append({
                     "graph": gid,
-                    "rows": rows,
-                    "count": len(rows),
+                    "rows": result.get("results", []),
+                    "count": result.get("count", 0),
                 })
-            except Exception as e:
+            else:
                 all_results.append({
                     "graph": gid,
                     "rows": [],
                     "count": 0,
-                    "error": str(e),
+                    "error": result.get("error"),
                 })
 
         return {
@@ -227,14 +196,17 @@ async def execute_query(request: QueryRequest, current_user: CurrentUser) -> dic
 async def get_available_graphs(current_user: CurrentUser) -> dict:
     """Get list of available graphs for querying."""
     try:
-        client = get_falkordb_client()
-        graphs = client.get_group_ids()
-        return {"graphs": graphs, "success": True}
+        client = get_graphiti_client()
+        result = await client.get_group_ids()
+
+        if result.get("success"):
+            return {"graphs": result.get("group_ids", []), "success": True}
+        return {"graphs": [], "success": False, "error": result.get("error")}
     except Exception as e:
         return {"graphs": [], "success": False, "error": str(e)}
 
 
 @router.post("/cypher")
 async def execute_cypher(request: CypherQueryRequest, current_user: CurrentUser) -> dict:
-    """Execute raw Cypher query against FalkorDB (alias for /)."""
+    """Execute raw Cypher query (alias for /)."""
     return await execute_query(QueryRequest(query=request.query), current_user)
