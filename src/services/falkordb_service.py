@@ -122,12 +122,14 @@ class FalkorDBClient:
             return self._get_nodes_from_graph(group_id, limit)
         else:
             # Query all graphs and combine results
+            # Use remaining limit per group instead of dividing evenly
             all_nodes = []
             for gid in self.get_group_ids():
-                nodes = self._get_nodes_from_graph(gid, limit // max(1, len(self.get_group_ids())))
-                all_nodes.extend(nodes)
-                if len(all_nodes) >= limit:
+                remaining = limit - len(all_nodes)
+                if remaining <= 0:
                     break
+                nodes = self._get_nodes_from_graph(gid, remaining)
+                all_nodes.extend(nodes)
             return all_nodes[:limit]
 
     def _get_nodes_from_graph(self, graph_name: str, limit: int) -> list[dict]:
@@ -180,12 +182,14 @@ class FalkorDBClient:
         if group_id:
             return self._get_edges_from_graph(group_id, limit)
         else:
+            # Use remaining limit per group instead of dividing evenly
             all_edges = []
             for gid in self.get_group_ids():
-                edges = self._get_edges_from_graph(gid, limit // max(1, len(self.get_group_ids())))
-                all_edges.extend(edges)
-                if len(all_edges) >= limit:
+                remaining = limit - len(all_edges)
+                if remaining <= 0:
                     break
+                edges = self._get_edges_from_graph(gid, remaining)
+                all_edges.extend(edges)
             return all_edges[:limit]
 
     def _get_edges_from_graph(self, graph_name: str, limit: int) -> list[dict]:

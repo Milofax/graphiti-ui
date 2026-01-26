@@ -980,8 +980,14 @@ export function VisualizationPage() {
             </div>
             <div className="col-auto d-flex align-items-center gap-2">
               {graphData && (
-                <span className={graphData.nodes.length >= limit ? 'text-danger fw-bold' : 'text-secondary'}>
-                  {graphData.nodes.length} Nodes • {graphData.edges.length} Edges
+                <span className="text-secondary">
+                  <span className={graphData.nodes.length >= limit ? 'text-danger fw-bold' : ''}>
+                    {graphData.nodes.length} Nodes
+                  </span>
+                  {' • '}
+                  <span className={graphData.edges.length >= limit * 2 ? 'text-danger fw-bold' : ''}>
+                    {graphData.edges.length} Edges
+                  </span>
                 </span>
               )}
               {(queueStatus?.currently_processing ?? 0) > 0 && (
