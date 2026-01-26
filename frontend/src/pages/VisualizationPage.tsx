@@ -748,6 +748,7 @@ export function VisualizationPage() {
     if (!selectedNode) return;
     setEditNodeName(selectedNode.name || '');
     setEditNodeSummary(selectedNode.summary || '');
+
     // Load existing attributes, converting all values to strings
     const attrs: Record<string, string> = {};
     if (selectedNode.attributes) {
@@ -755,6 +756,20 @@ export function VisualizationPage() {
         attrs[key] = value != null ? String(value) : '';
       });
     }
+
+    // Add entity type fields (if defined) with empty values for missing fields
+    const nodeType = selectedNode.type;
+    if (nodeType) {
+      const entityType = entityTypes.find(et => et.name === nodeType);
+      if (entityType?.fields) {
+        entityType.fields.forEach(field => {
+          if (!(field.name in attrs)) {
+            attrs[field.name] = '';
+          }
+        });
+      }
+    }
+
     setEditNodeAttributes(attrs);
     setIsEditingNode(true);
   };
