@@ -815,25 +815,25 @@ export function VisualizationPage() {
 
     setIsSaving(true);
     try {
-      // Filter out empty attributes
-      const filteredAttributes: Record<string, string> = {};
+      // Build attributes: non-empty values as strings, empty values as null (for deletion)
+      const processedAttributes: Record<string, string | null> = {};
       Object.entries(editNodeAttributes).forEach(([key, value]) => {
-        if (value.trim()) {
-          filteredAttributes[key] = value.trim();
-        }
+        const trimmed = value.trim();
+        processedAttributes[key] = trimmed || null;  // null = delete from DB
       });
 
       const normalizedName = editNodeName.trim() || null;
       const normalizedSummary = editNodeSummary.trim() || null;
 
-      // Pass group_id as query param (required for FalkorDB)
-      const url = selectedGroup
-        ? `/graph/node/${selectedNode.id}?group_id=${encodeURIComponent(selectedGroup)}`
+      // Use node's actual group_id (required for FalkorDB - each group is a separate graph)
+      const nodeGroupId = selectedNode.group_id || selectedGroup;
+      const url = nodeGroupId
+        ? `/graph/node/${selectedNode.id}?group_id=${encodeURIComponent(nodeGroupId)}`
         : `/graph/node/${selectedNode.id}`;
       const response = await api.put(url, {
         name: normalizedName,
         summary: normalizedSummary,
-        attributes: Object.keys(filteredAttributes).length > 0 ? filteredAttributes : undefined,
+        attributes: Object.keys(processedAttributes).length > 0 ? processedAttributes : undefined,
       });
 
       if (response.data.success) {
@@ -843,12 +843,20 @@ export function VisualizationPage() {
         const updatedName = normalizedName || selectedNode.name;
         const updatedSummary = normalizedSummary || selectedNode.summary;
 
+        // Filter out null values for display (they were deleted from DB)
+        const displayAttributes: Record<string, string> = {};
+        Object.entries(processedAttributes).forEach(([key, value]) => {
+          if (value !== null) {
+            displayAttributes[key] = value;
+          }
+        });
+
         // Update selected node with new values so sidebar shows updated data
         setSelectedNode({
           ...selectedNode,
           name: updatedName,
           summary: updatedSummary,
-          attributes: filteredAttributes,
+          attributes: displayAttributes,
         });
 
         // Update node in graphData without full reload
@@ -857,7 +865,7 @@ export function VisualizationPage() {
             ...graphData,
             nodes: graphData.nodes.map(n =>
               n.id === selectedNode.id
-                ? { ...n, name: updatedName, summary: updatedSummary, attributes: filteredAttributes }
+                ? { ...n, name: updatedName, summary: updatedSummary, attributes: displayAttributes }
                 : n
             ),
           });
@@ -882,9 +890,10 @@ export function VisualizationPage() {
 
     setIsSaving(true);
     try {
-      // Pass group_id as query param (required for FalkorDB)
-      const url = selectedGroup
-        ? `/graph/node/${selectedNode.id}?group_id=${encodeURIComponent(selectedGroup)}`
+      // Use node's actual group_id (required for FalkorDB - each group is a separate graph)
+      const nodeGroupId = selectedNode.group_id || selectedGroup;
+      const url = nodeGroupId
+        ? `/graph/node/${selectedNode.id}?group_id=${encodeURIComponent(nodeGroupId)}`
         : `/graph/node/${selectedNode.id}`;
       const response = await api.delete(url);
 
@@ -926,9 +935,12 @@ export function VisualizationPage() {
         : null;
       const normalizedFact = editEdgeFact.trim() || null;
 
-      // Pass group_id as query param (required for FalkorDB)
-      const url = selectedGroup
-        ? `/graph/edge/${selectedEdge.uuid}?group_id=${encodeURIComponent(selectedGroup)}`
+      // Derive group_id from source node (edges exist within the same graph as their nodes)
+      const sourceNodeId = typeof selectedEdge.source === 'string' ? selectedEdge.source : selectedEdge.source?.id;
+      const sourceNode = graphData?.nodes.find(n => n.id === sourceNodeId);
+      const edgeGroupId = sourceNode?.group_id || selectedGroup;
+      const url = edgeGroupId
+        ? `/graph/edge/${selectedEdge.uuid}?group_id=${encodeURIComponent(edgeGroupId)}`
         : `/graph/edge/${selectedEdge.uuid}`;
       const response = await api.put(url, {
         name: normalizedName,
@@ -982,9 +994,12 @@ export function VisualizationPage() {
 
     setIsSaving(true);
     try {
-      // Pass group_id as query param (required for FalkorDB)
-      const url = selectedGroup
-        ? `/graph/edge/${selectedEdge.uuid}?group_id=${encodeURIComponent(selectedGroup)}`
+      // Derive group_id from source node (edges exist within the same graph as their nodes)
+      const sourceNodeId = typeof selectedEdge.source === 'string' ? selectedEdge.source : selectedEdge.source?.id;
+      const sourceNode = graphData?.nodes.find(n => n.id === sourceNodeId);
+      const edgeGroupId = sourceNode?.group_id || selectedGroup;
+      const url = edgeGroupId
+        ? `/graph/edge/${selectedEdge.uuid}?group_id=${encodeURIComponent(edgeGroupId)}`
         : `/graph/edge/${selectedEdge.uuid}`;
       const response = await api.delete(url);
 

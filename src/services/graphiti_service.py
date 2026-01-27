@@ -232,7 +232,12 @@ class GraphitiClient:
             return {"success": False, "error": str(e)}
 
     async def update_entity_node(
-        self, uuid: str, name: str | None = None, summary: str | None = None, group_id: str | None = None
+        self,
+        uuid: str,
+        name: str | None = None,
+        summary: str | None = None,
+        group_id: str | None = None,
+        attributes: dict[str, str | None] | None = None,
     ) -> dict:
         """Update an entity node in the knowledge graph.
 
@@ -241,6 +246,7 @@ class GraphitiClient:
             name: New name (optional)
             summary: New summary (optional)
             group_id: Graph/group ID (required for FalkorDB)
+            attributes: Custom attributes dict (optional)
         """
         try:
             payload = {}
@@ -248,8 +254,11 @@ class GraphitiClient:
                 payload["name"] = name
             if summary is not None:
                 payload["summary"] = summary
+            if attributes:
+                payload["attributes"] = attributes
 
-            url = f"{self.base_url}/entity/{uuid}"
+            # Use /graph/node endpoint which supports attributes
+            url = f"{self.base_url}/graph/node/{uuid}"
             if group_id:
                 url += f"?group_id={group_id}"
 

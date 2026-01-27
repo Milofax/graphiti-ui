@@ -374,7 +374,7 @@ class UpdateNodeRequest(BaseModel):
     name: str | None = None
     summary: str | None = None
     group_id: str | None = None
-    attributes: dict[str, str] | None = None
+    attributes: dict[str, str | None] | None = None  # null values = delete attribute
 
 
 class UpdateEdgeRequest(BaseModel):
@@ -486,6 +486,7 @@ async def update_node(
             name=request.name,
             summary=request.summary,
             group_id=group_id,
+            attributes=request.attributes,
         )
         return result
 

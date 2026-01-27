@@ -166,7 +166,7 @@ export function ForceGraphVisualization({
   const getLinkColor3D = useCallback((link: GraphEdge) => {
     const idx = typeof link.index === 'number' ? link.index : -1;
     if (highlightedEdges.has(idx)) {
-      return 'rgba(255,171,0,0.4)'; // Transparent highlight so particles are visible
+      return 'rgba(255,171,0,0.85)'; // More opaque in 3D for better visibility
     }
     return isDark ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.4)';
   }, [highlightedEdges, isDark]);
