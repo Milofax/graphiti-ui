@@ -61,11 +61,12 @@ async def get_graph_data(
 
         # Transform nodes to frontend expected format
         # Include all relevant properties for node details panel
+        # MCP now returns 'id' and 'type' directly (in addition to 'uuid' and 'primaryLabel')
         transformed_nodes = [
             {
-                "id": node.get("uuid", ""),
+                "id": node.get("id", node.get("uuid", "")),
                 "name": node.get("name", "Unknown"),
-                "type": node.get("primaryLabel", "Entity"),
+                "type": node.get("type", node.get("primaryLabel", "Entity")),
                 "group_id": node.get("group_id", ""),
                 "summary": node.get("summary", ""),
                 "labels": node.get("labels", []),

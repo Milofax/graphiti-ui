@@ -778,7 +778,8 @@ export function VisualizationPage() {
     if (currentEntityTypes.length === 0) {
       try {
         const etResponse = await api.get('/entity-types');
-        currentEntityTypes = etResponse.data?.entity_types || [];
+        // API returns list directly, not {entity_types: [...]}
+        currentEntityTypes = Array.isArray(etResponse.data) ? etResponse.data : [];
         setEntityTypes(currentEntityTypes);
       } catch (err) {
         console.error('Failed to load entity types:', err);
@@ -1054,7 +1055,8 @@ export function VisualizationPage() {
         if (entityTypes.length === 0) {
           try {
             const etResponse = await api.get('/entity-types');
-            setEntityTypes(etResponse.data?.entity_types || []);
+            // API returns list directly, not {entity_types: [...]}
+            setEntityTypes(Array.isArray(etResponse.data) ? etResponse.data : []);
           } catch (err) {
             console.error('Failed to load entity types:', err);
           }
