@@ -643,30 +643,17 @@ class GraphitiClient:
         source_description: str = "",
         group_id: str | None = None,
     ) -> dict:
-        """Add an episode via MCP (requires LLM processing)."""
-        try:
-            async with httpx.AsyncClient(timeout=60.0) as client:
-                payload = {
-                    "name": name,
-                    "episode_body": content,
-                    "source": source,
-                    "source_description": source_description,
-                }
-                if group_id:
-                    payload["group_id"] = group_id
+        """Add an episode via MCP add_memory tool (requires LLM processing)."""
+        arguments: dict[str, Any] = {
+            "name": name,
+            "episode_body": content,
+            "source": source,
+            "source_description": source_description,
+        }
+        if group_id:
+            arguments["group_id"] = group_id
 
-                response = await client.post(
-                    f"{self.settings.graphiti_mcp_url}/episode",
-                    json=payload,
-                    headers={"Content-Type": "application/json"},
-                )
-
-                if response.status_code == 200:
-                    return response.json()
-                return {"success": False, "error": f"HTTP {response.status_code}"}
-
-        except Exception as e:
-            return {"success": False, "error": str(e)}
+        return await self.call_tool("add_memory", arguments)
 
     async def send_knowledge(self, content: str, group_id: str | None = None) -> dict:
         """Send knowledge text to LLM for extraction."""
@@ -679,19 +666,14 @@ class GraphitiClient:
         )
 
     # =========================================================================
-    # Queue Status (proxy to MCP server)
+    # Queue Status (direct Redis access)
     # =========================================================================
 
     async def get_queue_status(self) -> dict:
         """Get queue processing status."""
-        try:
-            async with httpx.AsyncClient(timeout=5.0) as client:
-                response = await client.get(f"{self.settings.graphiti_mcp_url}/queue/status")
-                if response.status_code == 200:
-                    return response.json()
-                return {"success": False, "processing": False, "error": f"HTTP {response.status_code}"}
-        except Exception as e:
-            return {"success": False, "processing": False, "error": str(e)}
+        from .queue_service import get_queue_service
+        service = get_queue_service()
+        return await service.get_status()
 
     # =========================================================================
     # Query Execution
