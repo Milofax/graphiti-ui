@@ -110,25 +110,28 @@ class GraphitiClient:
             # Transform nodes - extract all properties from node object
             nodes = []
             for record in nodes_result:
-                node_data = record.get("n", {})
+                node_obj = record.get("n")
                 labels = record.get("labels", [])
                 if "Entity" in labels:
                     labels = [l for l in labels if l != "Entity"]
+
+                # Get node properties (FalkorDB Node object has .properties dict)
+                props = node_obj.properties if hasattr(node_obj, "properties") else (node_obj or {})
 
                 # Extract attributes (all properties except standard ones)
                 standard_props = {"uuid", "name", "summary", "group_id", "created_at",
                                   "name_embedding", "summary_embedding"}
                 attributes = {
-                    k: v for k, v in node_data.items()
+                    k: v for k, v in props.items()
                     if k not in standard_props and not k.endswith("_embedding")
                 }
 
                 nodes.append({
-                    "uuid": node_data.get("uuid"),
-                    "name": node_data.get("name"),
-                    "summary": node_data.get("summary", ""),
-                    "group_id": node_data.get("group_id", ""),
-                    "created_at": node_data.get("created_at"),
+                    "uuid": props.get("uuid"),
+                    "name": props.get("name"),
+                    "summary": props.get("summary", ""),
+                    "group_id": props.get("group_id", ""),
+                    "created_at": props.get("created_at"),
                     "labels": labels,
                     "entity_type": labels[0] if labels else "Entity",
                     "attributes": attributes,
