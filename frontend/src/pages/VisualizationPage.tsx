@@ -444,8 +444,10 @@ export function VisualizationPage() {
   // Refs for episode loading to avoid re-render loops
   const loadedEpisodesRef = useRef(loadedEpisodes);
   const loadingEpisodesRef = useRef(loadingEpisodes);
+  const selectedGroupRef = useRef(selectedGroup);
   loadedEpisodesRef.current = loadedEpisodes;
   loadingEpisodesRef.current = loadingEpisodes;
+  selectedGroupRef.current = selectedGroup;
 
   // Load episode content in background (no UI toggle)
   const loadEpisodeBackground = useCallback(async (episodeUuid: string) => {
@@ -453,7 +455,10 @@ export function VisualizationPage() {
 
     setLoadingEpisodes(prev => new Set(prev).add(episodeUuid));
     try {
-      const response = await api.get(`/graph/episode/${episodeUuid}`);
+      // Include group_id for FalkorDB (each group is a separate graph)
+      const params = new URLSearchParams();
+      if (selectedGroupRef.current) params.append('group_id', selectedGroupRef.current);
+      const response = await api.get(`/graph/episode/${episodeUuid}?${params}`);
       if (response.data.success && response.data.episode) {
         setLoadedEpisodes(prev => ({
           ...prev,
@@ -595,7 +600,10 @@ export function VisualizationPage() {
 
     setLoadingEpisodes(prev => new Set(prev).add(episodeUuid));
     try {
-      const response = await api.get(`/graph/episode/${episodeUuid}`);
+      // Include group_id for FalkorDB (each group is a separate graph)
+      const params = new URLSearchParams();
+      if (selectedGroup) params.append('group_id', selectedGroup);
+      const response = await api.get(`/graph/episode/${episodeUuid}?${params}`);
       if (response.data.success && response.data.episode) {
         setLoadedEpisodes(prev => ({
           ...prev,
@@ -612,7 +620,7 @@ export function VisualizationPage() {
         return next;
       });
     }
-  }, [loadedEpisodes, loadingEpisodes, expandedEpisode]);
+  }, [loadedEpisodes, loadingEpisodes, expandedEpisode, selectedGroup]);
 
   // ============================================
   // Graph Editor Handlers
