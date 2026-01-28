@@ -4,20 +4,40 @@ import { useTheme } from '../contexts/ThemeContext';
 import { ForceGraphVisualization, type GraphNode, type GraphEdge } from '../components/ForceGraphVisualization';
 import { IconRefresh, IconTrash, IconPlus, IconEdit, IconX, IconCheck, IconTrashX, IconAdjustments, IconAlertTriangle, IconBrain, IconLink, IconLoader2 } from '@tabler/icons-react';
 
-// CSS for spinning animation
-const spinKeyframes = `
+// CSS for spinning animation and input-group button styling
+const visualizationStyles = `
 @keyframes spin {
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }
 }
 .spin { animation: spin 1s linear infinite; }
+
+/* Input-group buttons: match form-control border and remove persistent focus state */
+.input-group .btn-input-group {
+  border-color: var(--tblr-border-color);
+  background-color: var(--tblr-bg-surface);
+  color: var(--tblr-body-color);
+}
+.input-group .btn-input-group:hover {
+  background-color: var(--tblr-bg-surface-secondary);
+  border-color: var(--tblr-border-color);
+  color: var(--tblr-body-color);
+}
+.input-group .btn-input-group:focus {
+  box-shadow: none;
+  border-color: var(--tblr-border-color);
+  background-color: var(--tblr-bg-surface);
+}
+.input-group .btn-input-group:active {
+  background-color: var(--tblr-bg-surface-tertiary);
+}
 `;
 
 // Inject styles once
 if (typeof document !== 'undefined' && !document.getElementById('visualization-spin-styles')) {
   const style = document.createElement('style');
   style.id = 'visualization-spin-styles';
-  style.textContent = spinKeyframes;
+  style.textContent = visualizationStyles;
   document.head.appendChild(style);
 }
 
@@ -1111,8 +1131,9 @@ export function VisualizationPage() {
                 </select>
                 {selectedGroup && (
                   <button
-                    className="btn btn-sm btn-outline-secondary"
-                    onClick={() => {
+                    className="btn btn-sm btn-input-group"
+                    onClick={(e) => {
+                      (e.target as HTMLButtonElement).blur();
                       setRenameGraphNewName(selectedGroup);
                       setShowRenameGraphModal(true);
                     }}
@@ -1122,8 +1143,11 @@ export function VisualizationPage() {
                   </button>
                 )}
                 <button
-                  className="btn btn-sm btn-outline-primary"
-                  onClick={() => setShowCreateGraphModal(true)}
+                  className="btn btn-sm btn-input-group"
+                  onClick={(e) => {
+                    (e.target as HTMLButtonElement).blur();
+                    setShowCreateGraphModal(true);
+                  }}
                   title="Create new graph"
                 >
                   <IconPlus size={16} />

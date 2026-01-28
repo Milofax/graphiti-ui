@@ -84,8 +84,13 @@ class EntityTypeService:
             if not data:
                 return []
 
-            types_dict = json.loads(data)
-            return [EntityType.from_dict(t) for t in types_dict.values()]
+            types_data = json.loads(data)
+
+            # Handle both array format (MCP server) and dict format (legacy)
+            if isinstance(types_data, list):
+                return [EntityType.from_dict(t) for t in types_data]
+            else:
+                return [EntityType.from_dict(t) for t in types_data.values()]
         except Exception as e:
             logger.error(f"Error getting entity types: {e}")
             return []
@@ -98,13 +103,27 @@ class EntityTypeService:
             if not data:
                 return None
 
-            types_dict = json.loads(data)
-            if name in types_dict:
-                return EntityType.from_dict(types_dict[name])
-            return None
+            types_data = json.loads(data)
+
+            # Handle both array format (MCP server) and dict format (legacy)
+            if isinstance(types_data, list):
+                for t in types_data:
+                    if t.get("name") == name:
+                        return EntityType.from_dict(t)
+                return None
+            else:
+                if name in types_data:
+                    return EntityType.from_dict(types_data[name])
+                return None
         except Exception as e:
             logger.error(f"Error getting entity type {name}: {e}")
             return None
+
+    def _to_list(self, types_data: list | dict) -> list[dict[str, Any]]:
+        """Convert entity types to list format (normalizes dict to list)."""
+        if isinstance(types_data, list):
+            return types_data
+        return list(types_data.values())
 
     async def create(
         self,
@@ -115,11 +134,12 @@ class EntityTypeService:
         """Create a new entity type."""
         r = await self._get_redis()
 
-        # Load existing
+        # Load existing (as list)
         data = await r.get(ENTITY_TYPES_KEY)
-        types_dict = json.loads(data) if data else {}
+        types_list = self._to_list(json.loads(data)) if data else []
 
-        if name in types_dict:
+        # Check if exists
+        if any(t.get("name") == name for t in types_list):
             raise ValueError(f"Entity type '{name}' already exists")
 
         # Create new
@@ -129,10 +149,10 @@ class EntityTypeService:
             fields=fields or [],
             source="api",
         )
-        types_dict[name] = entity_type.to_dict()
+        types_list.append(entity_type.to_dict())
 
-        # Save
-        await r.set(ENTITY_TYPES_KEY, json.dumps(types_dict))
+        # Save as list
+        await r.set(ENTITY_TYPES_KEY, json.dumps(types_list))
         logger.info(f"Created entity type: {name}")
 
         return entity_type
@@ -146,47 +166,50 @@ class EntityTypeService:
         """Update an entity type."""
         r = await self._get_redis()
 
-        # Load existing
+        # Load existing (as list)
         data = await r.get(ENTITY_TYPES_KEY)
         if not data:
             return None
 
-        types_dict = json.loads(data)
-        if name not in types_dict:
-            return None
+        types_list = self._to_list(json.loads(data))
 
-        # Update
-        if description is not None:
-            types_dict[name]["description"] = description
-        if fields is not None:
-            types_dict[name]["fields"] = fields
-        types_dict[name]["modified_at"] = datetime.now(timezone.utc).isoformat()
-        types_dict[name]["source"] = "api"
+        # Find and update
+        for i, t in enumerate(types_list):
+            if t.get("name") == name:
+                if description is not None:
+                    types_list[i]["description"] = description
+                if fields is not None:
+                    types_list[i]["fields"] = fields
+                types_list[i]["modified_at"] = datetime.now(timezone.utc).isoformat()
+                types_list[i]["source"] = "api"
 
-        # Save
-        await r.set(ENTITY_TYPES_KEY, json.dumps(types_dict))
-        logger.info(f"Updated entity type: {name}")
+                # Save as list
+                await r.set(ENTITY_TYPES_KEY, json.dumps(types_list))
+                logger.info(f"Updated entity type: {name}")
+                return EntityType.from_dict(types_list[i])
 
-        return EntityType.from_dict(types_dict[name])
+        return None
 
     async def delete(self, name: str) -> bool:
         """Delete an entity type."""
         r = await self._get_redis()
 
-        # Load existing
+        # Load existing (as list)
         data = await r.get(ENTITY_TYPES_KEY)
         if not data:
             return False
 
-        types_dict = json.loads(data)
-        if name not in types_dict:
-            return False
+        types_list = self._to_list(json.loads(data))
+        original_len = len(types_list)
 
-        # Delete
-        del types_dict[name]
+        # Filter out the one to delete
+        types_list = [t for t in types_list if t.get("name") != name]
 
-        # Save
-        await r.set(ENTITY_TYPES_KEY, json.dumps(types_dict))
+        if len(types_list) == original_len:
+            return False  # Not found
+
+        # Save as list
+        await r.set(ENTITY_TYPES_KEY, json.dumps(types_list))
         logger.info(f"Deleted entity type: {name}")
 
         return True
@@ -195,7 +218,7 @@ class EntityTypeService:
         """Reset entity types to defaults."""
         r = await self._get_redis()
 
-        types_dict = {}
+        types_list = []
         for et in default_types:
             entity_type = EntityType(
                 name=et["name"],
@@ -203,12 +226,12 @@ class EntityTypeService:
                 fields=et.get("fields", []),
                 source="config",
             )
-            types_dict[et["name"]] = entity_type.to_dict()
+            types_list.append(entity_type.to_dict())
 
-        await r.set(ENTITY_TYPES_KEY, json.dumps(types_dict))
-        logger.info(f"Reset {len(types_dict)} entity types to defaults")
+        await r.set(ENTITY_TYPES_KEY, json.dumps(types_list))
+        logger.info(f"Reset {len(types_list)} entity types to defaults")
 
-        return [EntityType.from_dict(t) for t in types_dict.values()]
+        return [EntityType.from_dict(t) for t in types_list]
 
     async def close(self):
         """Close Redis connection."""

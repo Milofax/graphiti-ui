@@ -1,12 +1,20 @@
 import { useState, useEffect } from 'react';
 import { api } from '../api/client';
-import { IconCategory, IconInfoCircle, IconChevronDown, IconChevronRight, IconPlus, IconEdit, IconTrash, IconX, IconCheck, IconRefresh, IconAlertTriangle } from '@tabler/icons-react';
+import { IconCategory, IconInfoCircle, IconChevronDown, IconChevronRight, IconPlus, IconEdit, IconTrash, IconX, IconCheck, IconRefresh, IconAlertTriangle, IconGripVertical } from '@tabler/icons-react';
+import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
+import type { DragEndEvent } from '@dnd-kit/core';
+import { arrayMove, SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 
 interface EntityTypeField {
   name: string;
   type: string;
   required: boolean;
   description: string;
+}
+
+interface FormField extends EntityTypeField {
+  id: string;  // Unique ID for drag-and-drop
 }
 
 interface EntityType {
@@ -25,6 +33,106 @@ const PROTECTED_FIELD_NAMES = new Set([
   'name', 'summary', 'uuid', 'created_at', 'group_id',
   'labels', 'attributes', 'name_embedding', 'summary_embedding',
 ]);
+
+// Sortable field component for drag-and-drop
+interface SortableFieldProps {
+  field: FormField;
+  index: number;
+  isProtected: boolean;
+  onUpdate: (index: number, updates: Partial<EntityTypeField>) => void;
+  onRemove: (index: number) => void;
+}
+
+function SortableField({ field, index, isProtected, onUpdate, onRemove }: SortableFieldProps) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: field.id });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className={`p-2 ${index > 0 ? 'border-top' : ''}`}
+    >
+      <div className="row g-2 align-items-center">
+        <div className="col-auto">
+          <button
+            type="button"
+            className="btn btn-sm btn-ghost-secondary p-1"
+            style={{ cursor: 'grab', touchAction: 'none' }}
+            {...attributes}
+            {...listeners}
+          >
+            <IconGripVertical size={16} />
+          </button>
+        </div>
+        <div className="col-3">
+          <input
+            type="text"
+            className={`form-control form-control-sm ${field.name.trim() && isProtected ? 'is-invalid' : ''}`}
+            placeholder="Field name"
+            value={field.name}
+            onChange={e => onUpdate(index, { name: e.target.value })}
+          />
+          {field.name.trim() && isProtected && (
+            <div className="invalid-feedback">Reserved name</div>
+          )}
+        </div>
+        <div className="col-2">
+          <select
+            className="form-select form-select-sm"
+            value={field.type}
+            onChange={e => onUpdate(index, { type: e.target.value })}
+          >
+            {FIELD_TYPES.map(t => (
+              <option key={t} value={t}>{t}</option>
+            ))}
+          </select>
+        </div>
+        <div className="col-2">
+          <label className="form-check form-check-inline mb-0">
+            <input
+              type="checkbox"
+              className="form-check-input"
+              checked={field.required}
+              onChange={e => onUpdate(index, { required: e.target.checked })}
+            />
+            <span className="form-check-label small">Required</span>
+          </label>
+        </div>
+        <div className="col">
+          <input
+            type="text"
+            className="form-control form-control-sm"
+            placeholder="Description"
+            value={field.description}
+            onChange={e => onUpdate(index, { description: e.target.value })}
+          />
+        </div>
+        <div className="col-auto">
+          <button
+            type="button"
+            className="btn btn-sm btn-ghost-danger"
+            onClick={() => onRemove(index)}
+          >
+            <IconX size={14} />
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export function EntityTypesPage() {
   const [entityTypes, setEntityTypes] = useState<EntityType[]>([]);
@@ -45,7 +153,18 @@ export function EntityTypesPage() {
   // Form state
   const [formName, setFormName] = useState('');
   const [formDescription, setFormDescription] = useState('');
-  const [formFields, setFormFields] = useState<EntityTypeField[]>([]);
+  const [formFields, setFormFields] = useState<FormField[]>([]);
+
+  // DnD sensors
+  const sensors = useSensors(
+    useSensor(PointerSensor),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  );
+
+  // Generate unique ID for fields
+  const generateFieldId = () => `field-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 
   const fetchEntityTypes = async () => {
     try {
@@ -90,7 +209,8 @@ export function EntityTypesPage() {
     setEditingType(type);
     setFormName(type.name);
     setFormDescription(type.description);
-    setFormFields(type.fields ? [...type.fields] : []);
+    // Add IDs to fields for drag-and-drop
+    setFormFields(type.fields ? type.fields.map(f => ({ ...f, id: generateFieldId() })) : []);
     setShowModal(true);
   };
 
@@ -100,13 +220,24 @@ export function EntityTypesPage() {
   };
 
   const addField = () => {
-    setFormFields([...formFields, { name: '', type: 'str', required: false, description: '' }]);
+    setFormFields([...formFields, { id: generateFieldId(), name: '', type: 'str', required: false, description: '' }]);
   };
 
   const updateField = (index: number, updates: Partial<EntityTypeField>) => {
     const newFields = [...formFields];
     newFields[index] = { ...newFields[index], ...updates };
     setFormFields(newFields);
+  };
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (over && active.id !== over.id) {
+      setFormFields((items) => {
+        const oldIndex = items.findIndex((item) => item.id === active.id);
+        const newIndex = items.findIndex((item) => item.id === over.id);
+        return arrayMove(items, oldIndex, newIndex);
+      });
+    }
   };
 
   const removeField = (index: number) => {
@@ -127,8 +258,10 @@ export function EntityTypesPage() {
       return;
     }
 
-    // Validate fields
-    const validFields = formFields.filter(f => f.name.trim());
+    // Validate fields and strip IDs for API
+    const validFields = formFields
+      .filter(f => f.name.trim())
+      .map(({ id: _id, ...field }) => field);
 
     setIsSaving(true);
     setError(null);
@@ -391,68 +524,32 @@ export function EntityTypesPage() {
 
                   {formFields.length === 0 ? (
                     <div className="text-muted small p-3 border rounded">
-                      No fields defined. Fields allow structured attribute extraction.
+                      No fields defined. Fields allow structured attribute extraction. Drag to reorder.
                     </div>
                   ) : (
-                    <div className="border rounded">
-                      {formFields.map((field, index) => (
-                        <div key={index} className={`p-2 ${index > 0 ? 'border-top' : ''}`}>
-                          <div className="row g-2 align-items-center">
-                            <div className="col-3">
-                              <input
-                                type="text"
-                                className={`form-control form-control-sm ${field.name.trim() && isProtectedFieldName(field.name) ? 'is-invalid' : ''}`}
-                                placeholder="Field name"
-                                value={field.name}
-                                onChange={e => updateField(index, { name: e.target.value })}
-                              />
-                              {field.name.trim() && isProtectedFieldName(field.name) && (
-                                <div className="invalid-feedback">Reserved name</div>
-                              )}
-                            </div>
-                            <div className="col-2">
-                              <select
-                                className="form-select form-select-sm"
-                                value={field.type}
-                                onChange={e => updateField(index, { type: e.target.value })}
-                              >
-                                {FIELD_TYPES.map(t => (
-                                  <option key={t} value={t}>{t}</option>
-                                ))}
-                              </select>
-                            </div>
-                            <div className="col-2">
-                              <label className="form-check form-check-inline mb-0">
-                                <input
-                                  type="checkbox"
-                                  className="form-check-input"
-                                  checked={field.required}
-                                  onChange={e => updateField(index, { required: e.target.checked })}
-                                />
-                                <span className="form-check-label small">Required</span>
-                              </label>
-                            </div>
-                            <div className="col-4">
-                              <input
-                                type="text"
-                                className="form-control form-control-sm"
-                                placeholder="Description"
-                                value={field.description}
-                                onChange={e => updateField(index, { description: e.target.value })}
-                              />
-                            </div>
-                            <div className="col-1 text-end">
-                              <button
-                                className="btn btn-sm btn-ghost-danger"
-                                onClick={() => removeField(index)}
-                              >
-                                <IconX size={14} />
-                              </button>
-                            </div>
-                          </div>
+                    <DndContext
+                      sensors={sensors}
+                      collisionDetection={closestCenter}
+                      onDragEnd={handleDragEnd}
+                    >
+                      <SortableContext
+                        items={formFields.map(f => f.id)}
+                        strategy={verticalListSortingStrategy}
+                      >
+                        <div className="border rounded">
+                          {formFields.map((field, index) => (
+                            <SortableField
+                              key={field.id}
+                              field={field}
+                              index={index}
+                              isProtected={isProtectedFieldName(field.name)}
+                              onUpdate={updateField}
+                              onRemove={removeField}
+                            />
+                          ))}
                         </div>
-                      ))}
-                    </div>
+                      </SortableContext>
+                    </DndContext>
                   )}
                 </div>
               </div>
