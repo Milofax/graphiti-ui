@@ -98,11 +98,10 @@ class GraphitiClient:
             """
             nodes_result, _, _ = await driver.execute_query(nodes_query, limit=limit)
 
-            # Query edges
+            # Query edges - return full relationship to get all properties including episodes
             edges_query = """
             MATCH (a:Entity)-[r:RELATES_TO]->(b:Entity)
-            RETURN a.uuid AS source, b.uuid AS target, r.uuid AS uuid,
-                   r.name AS name, r.fact AS fact, r.group_id AS group_id
+            RETURN a.uuid AS source, b.uuid AS target, r
             LIMIT $limit
             """
             edges_result, _, _ = await driver.execute_query(edges_query, limit=limit)
@@ -137,16 +136,24 @@ class GraphitiClient:
                     "attributes": attributes,
                 })
 
-            # Transform edges
+            # Transform edges - extract all properties from relationship object
             edges = []
             for record in edges_result:
+                rel_obj = record.get("r")
+                # Get relationship properties (FalkorDB Edge object has .properties dict)
+                props = rel_obj.properties if hasattr(rel_obj, "properties") else (rel_obj or {})
+
                 edges.append({
-                    "uuid": record["uuid"],
+                    "uuid": props.get("uuid", ""),
                     "source": record["source"],
                     "target": record["target"],
-                    "name": record.get("name", ""),
-                    "fact": record.get("fact", ""),
-                    "group_id": record.get("group_id", ""),
+                    "name": props.get("name", ""),
+                    "fact": props.get("fact", ""),
+                    "group_id": props.get("group_id", ""),
+                    "created_at": props.get("created_at", ""),
+                    "valid_at": props.get("valid_at"),
+                    "expired_at": props.get("expired_at"),
+                    "episodes": props.get("episodes", []),
                 })
 
             return {"success": True, "nodes": nodes, "edges": edges}
