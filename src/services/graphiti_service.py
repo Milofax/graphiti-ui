@@ -120,7 +120,7 @@ class GraphitiClient:
 
                 # Extract attributes (all properties except standard ones)
                 standard_props = {"uuid", "name", "summary", "group_id", "created_at",
-                                  "name_embedding", "summary_embedding"}
+                                  "name_embedding", "summary_embedding", "labels"}
                 attributes = {
                     k: v for k, v in props.items()
                     if k not in standard_props and not k.endswith("_embedding")
