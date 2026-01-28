@@ -54,10 +54,12 @@ class GraphitiClient:
         return self._embedder
 
     def _get_driver(self, group_id: str | None = None) -> FalkorDriver:
-        """Get driver for specific group_id (cloned if needed)."""
-        if group_id:
-            return self.driver.clone(group_id)  # type: ignore[return-value]
-        return self.driver
+        """Get driver for specific group_id (cloned if needed).
+
+        Uses settings.graphiti_group_id as default if no group_id is provided.
+        """
+        effective_group_id = group_id or self.settings.graphiti_group_id
+        return self.driver.clone(effective_group_id)  # type: ignore[return-value]
 
     # =========================================================================
     # Health & Status
@@ -258,7 +260,7 @@ class GraphitiClient:
                 uuid=str(uuid4()),
                 name=name,
                 summary=summary,
-                group_id=group_id or self.settings.falkordb_database,
+                group_id=group_id or self.settings.graphiti_group_id,
                 labels=labels,
                 attributes=attributes or {},
                 created_at=datetime.now(timezone.utc),
@@ -385,7 +387,7 @@ class GraphitiClient:
                 target_node_uuid=target_uuid,
                 name=name,
                 fact=fact or f"{name} relationship",
-                group_id=group_id or self.settings.falkordb_database,
+                group_id=group_id or self.settings.graphiti_group_id,
                 episodes=[],
                 created_at=datetime.now(timezone.utc),
             )
@@ -490,7 +492,7 @@ class GraphitiClient:
 
             episodes = await EpisodicNode.get_by_group_ids(
                 driver,
-                group_ids=group_ids or [self.settings.falkordb_database],
+                group_ids=group_ids or [self.settings.graphiti_group_id],
                 limit=limit,
             )
 

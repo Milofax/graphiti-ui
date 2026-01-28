@@ -31,6 +31,9 @@ class Settings(BaseSettings):
     falkordb_password: str = ""
     falkordb_database: str = "graphiti"
 
+    # Graphiti Settings
+    graphiti_group_id: str = "main"  # Default group_id for graph operations
+
     # LLM Configuration (for embeddings)
     openai_api_key: str = ""
     openai_api_url: str = "https://api.openai.com/v1"
