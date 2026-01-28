@@ -142,43 +142,36 @@ class GraphitiClient:
             return {"success": False, "nodes": [], "edges": [], "error": str(e)}
 
     async def get_group_ids(self) -> dict:
-        """Get all available group IDs."""
+        """Get all available group IDs from FalkorDB.
+
+        FalkorDB stores each group as a separate graph (Redis key with type 'graphdata').
+        """
         try:
-            # FalkorDB stores each group as a separate graph/database
-            # We need to query Redis for available graphs
-            # For now, query the default database for group_ids
-            query = """
-            MATCH (n)
-            WHERE n.group_id IS NOT NULL
-            RETURN DISTINCT n.group_id AS group_id
-            LIMIT 100
-            """
-            records, _, _ = await self.driver.execute_query(query)
-            group_ids = [r["group_id"] for r in records if r.get("group_id")]
+            import redis.asyncio as redis_async
 
-            # Also check for graphs via Redis KEYS pattern
-            # FalkorDB stores graphs as Redis keys
-            try:
-                import redis.asyncio as redis_async
-                r = redis_async.Redis(
-                    host=self.settings.falkordb_host,
-                    port=self.settings.falkordb_port,
-                    password=self.settings.falkordb_password or None,
-                    decode_responses=True,
-                )
-                # FalkorDB graphs are stored without prefix by default
-                keys = await r.keys("*")
-                for key in keys:
-                    key_type = await r.type(key)
-                    # FalkorDB graphs are stored as module types or hashes
-                    if key_type in ("graphdata", "module"):
-                        if key not in group_ids and not key.startswith("_"):
-                            group_ids.append(key)
-                await r.aclose()
-            except Exception:
-                pass
+            r = redis_async.Redis(
+                host=self.settings.falkordb_host,
+                port=self.settings.falkordb_port,
+                password=self.settings.falkordb_password or None,
+                decode_responses=True,
+            )
 
-            return {"success": True, "group_ids": sorted(set(group_ids))}
+            group_ids = []
+            keys = await r.keys("*")
+
+            for key in keys:
+                # Skip internal/system keys
+                if key.startswith("_") or key.startswith("graphiti:") or key.startswith("telemetry{"):
+                    continue
+
+                # Check if it's a FalkorDB graph
+                key_type = await r.type(key)
+                if key_type == "graphdata":
+                    group_ids.append(key)
+
+            await r.aclose()
+
+            return {"success": True, "group_ids": sorted(group_ids)}
         except Exception as e:
             logger.exception("Error getting group IDs")
             return {"success": False, "group_ids": [], "error": str(e)}

@@ -1068,8 +1068,33 @@ export function VisualizationPage() {
     document.addEventListener('mouseup', handleMouseUp);
   }, [panelWidth]);
 
+  // Fetch available groups on mount
+  useEffect(() => {
+    const fetchGroups = async () => {
+      try {
+        const response = await api.get('/graph/groups');
+        if (response.data.success && response.data.group_ids?.length > 0) {
+          setGroups(response.data.group_ids);
+          // Set first group as default if none selected
+          if (!selectedGroup) {
+            setSelectedGroup(response.data.group_ids[0]);
+          }
+        }
+      } catch (err) {
+        console.error('Failed to fetch groups:', err);
+      }
+    };
+    fetchGroups();
+  }, []);
+
   useEffect(() => {
     const fetchData = async () => {
+      // Wait for selectedGroup to be set (either from fetch or user selection)
+      if (!selectedGroup && groups.length === 0) {
+        // Still loading groups, wait
+        return;
+      }
+
       setIsLoading(true);
       setError(null);
       try {
@@ -1078,13 +1103,6 @@ export function VisualizationPage() {
 
         const response = await api.get(`/graph/data?${params}`);
         setGraphData(response.data);
-
-        // Only update groups list when no group is selected (showing all data)
-        // This preserves the full list when filtering by a specific group
-        if (!selectedGroup) {
-          const uniqueGroups = [...new Set(response.data.nodes.map((n: Node) => n.group_id).filter(Boolean))];
-          setGroups(uniqueGroups as string[]);
-        }
 
         // Load entity types for edit mode (if not already loaded)
         if (entityTypes.length === 0) {
@@ -1103,7 +1121,7 @@ export function VisualizationPage() {
       }
     };
     fetchData();
-  }, [limit, selectedGroup, refreshKey]);
+  }, [limit, selectedGroup, refreshKey, groups.length]);
 
 
   return (
