@@ -1659,22 +1659,24 @@ export function VisualizationPage() {
                       onChange={e => {
                         const newType = e.target.value;
                         setEditNodeType(newType);
-                        // Update attributes based on new entity type's fields
+                        // Update selectedEntityType for description display
                         const entityType = entityTypes.find(et => et.name === newType);
+                        setSelectedEntityType(entityType || null);
+                        // Update attributes: show type fields + non-empty existing attributes
+                        const newAttrs: Record<string, string> = {};
+                        // Add fields from new entity type (preserve existing values if field name matches)
                         if (entityType?.fields) {
-                          const newAttrs: Record<string, string> = {};
-                          // Add fields from new entity type (preserve existing values if field name matches)
                           entityType.fields.forEach(f => {
                             newAttrs[f.name] = editNodeAttributes[f.name] || '';
                           });
-                          // Keep existing attributes not in new type (at the end)
-                          Object.entries(editNodeAttributes).forEach(([key, value]) => {
-                            if (!(key in newAttrs)) {
-                              newAttrs[key] = value;
-                            }
-                          });
-                          setEditNodeAttributes(newAttrs);
                         }
+                        // Keep only NON-EMPTY existing attributes not in new type
+                        Object.entries(editNodeAttributes).forEach(([key, value]) => {
+                          if (!(key in newAttrs) && value.trim() !== '') {
+                            newAttrs[key] = value;
+                          }
+                        });
+                        setEditNodeAttributes(newAttrs);
                       }}
                     >
                       {/* Always include Entity as first option */}
