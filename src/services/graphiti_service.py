@@ -1,16 +1,14 @@
-"""Graphiti service with direct graphiti_core integration.
+"""Graphiti service with Graphiti class CRUD integration.
 
-Replaces HTTP-based MCP proxy with direct FalkorDB connection.
+Uses the Graphiti class facade for CRUD operations with auto-embedding generation.
 """
 
 import logging
-from datetime import datetime, timezone
 from typing import Any
-from uuid import uuid4
 
 import httpx
+from graphiti_core import Graphiti
 from graphiti_core.driver.falkordb_driver import FalkorDriver
-from graphiti_core.edges import EntityEdge
 from graphiti_core.embedder import OpenAIEmbedder, OpenAIEmbedderConfig
 from graphiti_core.errors import EdgeNotFoundError, NodeNotFoundError
 from graphiti_core.nodes import EntityNode, EpisodicNode
@@ -21,12 +19,13 @@ logger = logging.getLogger(__name__)
 
 
 class GraphitiClient:
-    """Client for direct Graphiti operations via graphiti_core."""
+    """Client for Graphiti operations via graphiti_core Graphiti class."""
 
     def __init__(self):
         self.settings = get_settings()
         self._driver: FalkorDriver | None = None
         self._embedder: OpenAIEmbedder | None = None
+        self._graphiti_instances: dict[str, Graphiti] = {}
 
     @property
     def driver(self) -> FalkorDriver:
@@ -60,6 +59,17 @@ class GraphitiClient:
         """
         effective_group_id = group_id or self.settings.graphiti_group_id
         return self.driver.clone(effective_group_id)  # type: ignore[return-value]
+
+    def _get_graphiti(self, group_id: str | None = None) -> Graphiti:
+        """Get Graphiti instance for specific group_id (cached)."""
+        effective_group_id = group_id or self.settings.graphiti_group_id
+        if effective_group_id not in self._graphiti_instances:
+            driver = self._get_driver(effective_group_id)
+            self._graphiti_instances[effective_group_id] = Graphiti(
+                graph_driver=driver,
+                embedder=self.embedder,
+            )
+        return self._graphiti_instances[effective_group_id]
 
     # =========================================================================
     # Health & Status
@@ -326,29 +336,18 @@ class GraphitiClient:
         group_id: str | None = None,
         attributes: dict[str, str] | None = None,
     ) -> dict:
-        """Create an entity node directly with embeddings."""
+        """Create an entity node using Graphiti class (auto-generates embeddings)."""
         try:
-            driver = self._get_driver(group_id)
+            graphiti = self._get_graphiti(group_id)
+            effective_group_id = group_id or self.settings.graphiti_group_id
 
-            labels = [entity_type] if entity_type and entity_type != "Entity" else []
-
-            entity = EntityNode(
-                uuid=str(uuid4()),
+            entity = await graphiti.create_entity(
                 name=name,
+                group_id=effective_group_id,
+                entity_type=entity_type,
                 summary=summary,
-                group_id=group_id or self.settings.graphiti_group_id,
-                labels=labels,
-                attributes=attributes or {},
-                created_at=datetime.now(timezone.utc),
+                attributes=attributes,
             )
-
-            # Generate embeddings
-            await entity.generate_name_embedding(self.embedder)
-            if summary:
-                await entity.generate_summary_embedding(self.embedder)
-
-            # Save to database
-            await entity.save(driver)
 
             return {
                 "success": True,
@@ -369,58 +368,52 @@ class GraphitiClient:
         group_id: str | None = None,
         attributes: dict[str, str | None] | None = None,
     ) -> dict:
-        """Update an entity node."""
+        """Update an entity node using Graphiti class (auto-regenerates embeddings)."""
         try:
+            graphiti = self._get_graphiti(group_id)
             driver = self._get_driver(group_id)
-            entity = await EntityNode.get_by_uuid(driver, uuid)
 
-            # Update fields
-            if name is not None:
-                entity.name = name
-            if summary is not None:
-                entity.summary = summary
+            # Handle attribute deletion (set value to None)
+            merged_attributes = None
             if attributes:
+                # First get current entity to handle deletions
+                entity = await EntityNode.get_by_uuid(driver, uuid)
+                merged_attributes = dict(entity.attributes)
                 for key, value in attributes.items():
                     if value is None:
-                        entity.attributes.pop(key, None)
+                        merged_attributes.pop(key, None)
                     else:
-                        entity.attributes[key] = value
+                        merged_attributes[key] = value
 
-            # Regenerate embeddings if name or summary changed
-            if name is not None:
-                await entity.generate_name_embedding(self.embedder)
-            if summary is not None and entity.summary:
-                await entity.generate_summary_embedding(self.embedder)
-
-            # Change entity type (labels) if specified - BEFORE save
+            # Handle entity type change via direct Cypher (labels need special handling)
             if entity_type is not None:
-                # Sanitize label name (FalkorDB doesn't support parameterized labels)
                 safe_type = entity_type.replace("'", "").replace('"', "").replace("\\", "")
+                entity = await EntityNode.get_by_uuid(driver, uuid)
 
-                # Remove ALL old labels (except Entity base) via Cypher
-                old_labels = entity.labels or []
-                for old_label in old_labels:
+                # Remove old labels
+                for old_label in entity.labels or []:
                     safe_old = old_label.replace("'", "").replace('"', "").replace("\\", "")
                     if safe_old and safe_old != "Entity":
-                        remove_query = f"""
-                        MATCH (n:Entity {{uuid: $uuid}})
-                        REMOVE n:`{safe_old}`
-                        """
-                        await driver.execute_query(remove_query, uuid=uuid)
+                        await driver.execute_query(
+                            f"MATCH (n:Entity {{uuid: $uuid}}) REMOVE n:`{safe_old}`",
+                            uuid=uuid,
+                        )
 
-                # Add the new label
+                # Add new label
                 if safe_type and safe_type != "Entity":
-                    add_label_query = f"""
-                    MATCH (n:Entity {{uuid: $uuid}})
-                    SET n:`{safe_type}`
-                    """
-                    await driver.execute_query(add_label_query, uuid=uuid)
+                    await driver.execute_query(
+                        f"MATCH (n:Entity {{uuid: $uuid}}) SET n:`{safe_type}`",
+                        uuid=uuid,
+                    )
 
-                # Update entity.labels for consistency
-                entity.labels = [safe_type] if safe_type and safe_type != "Entity" else []
-
-            # Save changes (name, summary, attributes, labels)
-            await entity.save(driver)
+            # Use Graphiti.update_entity for name/summary/attributes (handles embeddings)
+            await graphiti.update_entity(
+                uuid=uuid,
+                name=name,
+                summary=summary,
+                entity_type=entity_type,
+                attributes=merged_attributes,
+            )
 
             return {"success": True, "uuid": uuid}
         except NodeNotFoundError:
@@ -430,11 +423,10 @@ class GraphitiClient:
             return {"success": False, "error": str(e)}
 
     async def delete_entity_node(self, uuid: str, group_id: str | None = None) -> dict:
-        """Delete an entity node."""
+        """Delete an entity node using Graphiti class."""
         try:
-            driver = self._get_driver(group_id)
-            entity = await EntityNode.get_by_uuid(driver, uuid)
-            await entity.delete(driver)
+            graphiti = self._get_graphiti(group_id)
+            await graphiti.delete_entity(uuid)
             return {"success": True, "deleted": uuid}
         except NodeNotFoundError:
             return {"success": False, "error": f"Node {uuid} not found"}
@@ -481,27 +473,18 @@ class GraphitiClient:
         fact: str = "",
         group_id: str | None = None,
     ) -> dict:
-        """Create an edge directly with embeddings."""
+        """Create an edge using Graphiti class (auto-generates embedding)."""
         try:
-            driver = self._get_driver(group_id)
+            graphiti = self._get_graphiti(group_id)
+            effective_group_id = group_id or self.settings.graphiti_group_id
 
-            edge = EntityEdge(
-                uuid=str(uuid4()),
+            edge = await graphiti.create_edge(
                 source_node_uuid=source_uuid,
                 target_node_uuid=target_uuid,
                 name=name,
                 fact=fact or f"{name} relationship",
-                group_id=group_id or self.settings.graphiti_group_id,
-                episodes=[],
-                created_at=datetime.now(timezone.utc),
+                group_id=effective_group_id,
             )
-
-            # Generate embedding for fact
-            if fact:
-                await edge.generate_embedding(self.embedder)
-
-            # Save to database
-            await edge.save(driver)
 
             return {
                 "success": True,
@@ -519,23 +502,15 @@ class GraphitiClient:
         fact: str | None = None,
         group_id: str | None = None,
     ) -> dict:
-        """Update an entity edge."""
+        """Update an entity edge using Graphiti class (auto-regenerates embedding)."""
         try:
-            driver = self._get_driver(group_id)
-            edge = await EntityEdge.get_by_uuid(driver, uuid)
+            graphiti = self._get_graphiti(group_id)
 
-            # Update fields
-            if name is not None:
-                edge.name = name
-            if fact is not None:
-                edge.fact = fact
-
-            # Regenerate embedding if fact changed
-            if fact is not None:
-                await edge.generate_embedding(self.embedder)
-
-            # Save changes
-            await edge.save(driver)
+            await graphiti.update_edge(
+                uuid=uuid,
+                name=name,
+                fact=fact,
+            )
 
             return {"success": True, "uuid": uuid}
         except EdgeNotFoundError:
@@ -545,11 +520,10 @@ class GraphitiClient:
             return {"success": False, "error": str(e)}
 
     async def delete_entity_edge(self, uuid: str, group_id: str | None = None) -> dict:
-        """Delete an entity edge."""
+        """Delete an entity edge using Graphiti class."""
         try:
-            driver = self._get_driver(group_id)
-            edge = await EntityEdge.get_by_uuid(driver, uuid)
-            await edge.delete(driver)
+            graphiti = self._get_graphiti(group_id)
+            await graphiti.delete_edge(uuid)
             return {"success": True, "deleted": uuid}
         except EdgeNotFoundError:
             return {"success": False, "error": f"Edge {uuid} not found"}
@@ -625,12 +599,12 @@ class GraphitiClient:
             return {"success": False, "error": str(e)}
 
     async def delete_episode(self, episode_uuid: str) -> dict:
-        """Delete an episode."""
+        """Delete an episode using Graphiti class."""
         try:
-            # Episodes don't have group_id in the API, so use default driver
+            # First get episode to find its group_id
             episode = await EpisodicNode.get_by_uuid(self.driver, episode_uuid)
-            driver = self._get_driver(episode.group_id)
-            await episode.delete(driver)
+            graphiti = self._get_graphiti(episode.group_id)
+            await graphiti.delete_episode(episode_uuid)
             return {"success": True, "deleted": episode_uuid}
         except NodeNotFoundError:
             return {"success": False, "error": f"Episode {episode_uuid} not found"}
