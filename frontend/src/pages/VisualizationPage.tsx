@@ -868,7 +868,10 @@ export function VisualizationPage() {
     if (!selectedNode) return;
     setEditNodeName(selectedNode.name || '');
     setEditNodeSummary(selectedNode.summary || '');
-    setEditNodeType(selectedNode.labels?.[0] || selectedNode.type || 'Entity');
+    // Use the specific type label (second in array), not the base 'Entity' label
+    // Labels are typically ['Entity', 'SpecificType'] - we want 'SpecificType'
+    const specificType = selectedNode.labels?.[1] || selectedNode.labels?.[0] || selectedNode.type || 'Entity';
+    setEditNodeType(specificType);
 
     // Fetch entity types from DB if not loaded yet
     let currentEntityTypes = entityTypes;
@@ -884,7 +887,7 @@ export function VisualizationPage() {
     }
 
     // Find entity type for field order and set selected type for dropdown
-    const nodeEntityType = selectedNode.labels?.[0] || selectedNode.type;
+    const nodeEntityType = selectedNode.labels?.[1] || selectedNode.labels?.[0] || selectedNode.type;
     const entityType = currentEntityTypes.find(et => et.name === nodeEntityType);
     setSelectedEntityType(entityType || null);
     const fieldOrder = entityType?.fields?.map(f => f.name) || [];
@@ -1263,7 +1266,10 @@ export function VisualizationPage() {
                       setRenameGraphNewName(selectedGroup);
                       setShowRenameGraphModal(true);
                     }}
-                    title="Rename graph"
+                    disabled={(queueStatus?.total_pending ?? 0) > 0 || (queueStatus?.currently_processing ?? 0) > 0}
+                    title={(queueStatus?.total_pending ?? 0) > 0 || (queueStatus?.currently_processing ?? 0) > 0
+                      ? "Cannot rename while queue is processing"
+                      : "Rename graph"}
                   >
                     <IconEdit size={16} />
                   </button>
@@ -1367,9 +1373,11 @@ export function VisualizationPage() {
               <div className="col-auto">
                 <button
                   onClick={handleDeleteGraph}
-                  disabled={isDeleting}
+                  disabled={isDeleting || (queueStatus?.total_pending ?? 0) > 0 || (queueStatus?.currently_processing ?? 0) > 0}
                   className="btn btn-sm btn-outline-danger"
-                  title={`Delete graph "${selectedGroup}"`}
+                  title={(queueStatus?.total_pending ?? 0) > 0 || (queueStatus?.currently_processing ?? 0) > 0
+                    ? "Cannot delete while queue is processing"
+                    : `Delete graph "${selectedGroup}"`}
                 >
                   <IconTrash size={16} className="me-1" />
                   {isDeleting ? 'Deleting...' : 'Delete Graph'}
