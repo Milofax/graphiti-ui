@@ -577,67 +577,28 @@ class GraphitiClient:
             return {"success": False, "error": str(e)}
 
     # =========================================================================
-    # Graph Management
+    # Graph Management (DB-neutral via Graphiti class)
     # =========================================================================
 
     async def delete_graph(self, group_id: str) -> dict:
-        """Delete an entire graph (group)."""
+        """Delete an entire graph (group) using Graphiti's DB-neutral method."""
         try:
-            import redis.asyncio as redis_async
-
-            # Use GRAPH.DELETE command to properly delete FalkorDB graph
-            # (simple DEL doesn't work for graphdata type keys)
-            r = redis_async.Redis(
-                host=self.settings.falkordb_host,
-                port=self.settings.falkordb_port,
-                password=self.settings.falkordb_password or None,
-                decode_responses=True,
-            )
-            await r.execute_command("GRAPH.DELETE", group_id)
-            await r.aclose()
-
+            graphiti = self._get_graphiti(group_id)
+            await graphiti.delete_group(group_id)
+            # Clear cached instance
+            self._graphiti_instances.pop(group_id, None)
             return {"success": True, "deleted": group_id}
         except Exception as e:
             logger.exception("Error deleting graph")
             return {"success": False, "error": str(e)}
 
     async def rename_graph(self, group_id: str, new_name: str) -> dict:
-        """Rename a graph by copying to new name and deleting the old one.
-
-        FalkorDB stores each graph as a separate Redis key, so renaming requires:
-        1. Copy graph to new name (GRAPH.COPY)
-        2. Update group_id property on all nodes/edges in the new graph
-        3. Delete the old graph
-        """
+        """Rename a graph using Graphiti's DB-neutral method."""
         try:
-            import redis.asyncio as redis_async
-
-            r = redis_async.Redis(
-                host=self.settings.falkordb_host,
-                port=self.settings.falkordb_port,
-                password=self.settings.falkordb_password or None,
-                decode_responses=True,
-            )
-
-            # Step 1: Copy graph to new name
-            await r.execute_command("GRAPH.COPY", group_id, new_name)
-
-            # Step 2: Update group_id property on all nodes/edges in the NEW graph
-            new_driver = self._get_driver(new_name)
-            await new_driver.execute_query(
-                "MATCH (n) SET n.group_id = $new_id",
-                new_id=new_name,
-            )
-            await new_driver.execute_query(
-                "MATCH ()-[r]->() SET r.group_id = $new_id",
-                new_id=new_name,
-            )
-
-            # Step 3: Delete the old graph
-            await r.execute_command("GRAPH.DELETE", group_id)
-
-            await r.aclose()
-
+            graphiti = self._get_graphiti(group_id)
+            await graphiti.rename_group(group_id, new_name)
+            # Clear cached instance for old name
+            self._graphiti_instances.pop(group_id, None)
             return {"success": True, "old_name": group_id, "new_name": new_name}
         except Exception as e:
             logger.exception("Error renaming graph")
