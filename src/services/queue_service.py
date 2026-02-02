@@ -1,11 +1,11 @@
-"""Queue Status Service with direct Redis access.
+"""Queue Status Service via MCP Server.
 
-Monitors episode processing queue via Redis Streams.
+Polls queue status from MCP server's /queue/status endpoint (DB-neutral).
 """
 
 import logging
 
-import redis.asyncio as redis
+import httpx
 
 from ..config import get_settings
 
@@ -13,85 +13,49 @@ logger = logging.getLogger(__name__)
 
 
 class QueueService:
-    """Service for monitoring queue status in Redis."""
+    """Service for monitoring queue status via MCP server."""
 
     def __init__(self):
-        self._redis: redis.Redis | None = None
+        self._client: httpx.AsyncClient | None = None
 
-    async def _get_redis(self) -> redis.Redis:
-        """Get or create Redis connection."""
-        if self._redis is None:
-            settings = get_settings()
-            self._redis = redis.Redis(
-                host=settings.falkordb_host,
-                port=settings.falkordb_port,
-                password=settings.falkordb_password or None,
-                decode_responses=True,
-            )
-        return self._redis
-
-    def _stream_key(self, group_id: str) -> str:
-        """Get Redis stream key for a group."""
-        return f"graphiti:queue:{group_id}"
-
-    async def get_all_group_ids(self) -> list[str]:
-        """Get all group IDs from Redis keys."""
-        try:
-            r = await self._get_redis()
-            all_keys = await r.keys("*")
-            group_ids = [
-                k for k in all_keys
-                if not k.startswith("telemetry{")
-                and not k.startswith("graphiti:")
-                and k not in ["graphiti"]
-            ]
-            return sorted(group_ids)
-        except Exception as e:
-            logger.error(f"Error getting group IDs: {e}")
-            return []
+    def _get_client(self) -> httpx.AsyncClient:
+        """Get or create HTTP client."""
+        if self._client is None:
+            self._client = httpx.AsyncClient(timeout=5.0)
+        return self._client
 
     async def get_status(self) -> dict:
-        """Get queue processing status.
+        """Get queue processing status from MCP server.
 
-        Counts only actually pending messages:
-        - pending: messages delivered to consumer but not yet acknowledged (being processed)
-        - lag: messages not yet delivered to any consumer (waiting in queue)
+        Returns:
+            - processing: bool - whether queue is active
+            - pending_count: int - total messages waiting
+            - currently_processing: int - number of active workers
         """
         try:
-            r = await self._get_redis()
+            settings = get_settings()
+            client = self._get_client()
 
-            # Find all queue streams
-            queue_keys = await r.keys("graphiti:queue:*")
-            # Filter out DLQ streams
-            queue_keys = [k for k in queue_keys if not k.endswith(":dlq")]
+            response = await client.get(f"{settings.graphiti_mcp_url}/queue/status")
+            response.raise_for_status()
 
-            total_pending = 0
-            total_processing = 0
-            active_streams = 0
-
-            for stream_key in queue_keys:
-                try:
-                    groups = await r.xinfo_groups(stream_key)
-                    for group in groups:
-                        # pending = delivered but not acknowledged (currently being processed)
-                        pending = group.get("pending", 0)
-                        # lag = not yet delivered (waiting in queue)
-                        lag = group.get("lag", 0)
-                        if pending > 0 or lag > 0:
-                            total_processing += pending
-                            total_pending += lag
-                            active_streams += 1
-                except redis.ResponseError:
-                    # Stream or group doesn't exist
-                    pass
-                except Exception as e:
-                    logger.debug(f"Error checking stream {stream_key}: {e}")
+            data = response.json()
+            total = data.get("total_pending", 0) + data.get("currently_processing", 0)
 
             return {
                 "success": True,
-                "processing": (total_pending + total_processing) > 0,
-                "pending_count": total_pending + total_processing,
-                "active_streams": active_streams,
+                "processing": total > 0,
+                "pending_count": data.get("total_pending", 0),
+                "currently_processing": data.get("currently_processing", 0),
+            }
+        except httpx.RequestError as e:
+            logger.debug(f"Error connecting to MCP server: {e}")
+            return {
+                "success": False,
+                "processing": False,
+                "pending_count": 0,
+                "currently_processing": 0,
+                "error": str(e),
             }
         except Exception as e:
             logger.error(f"Error getting queue status: {e}")
@@ -99,15 +63,15 @@ class QueueService:
                 "success": False,
                 "processing": False,
                 "pending_count": 0,
-                "active_streams": 0,
+                "currently_processing": 0,
                 "error": str(e),
             }
 
     async def close(self):
-        """Close Redis connection."""
-        if self._redis:
-            await self._redis.aclose()
-            self._redis = None
+        """Close HTTP client."""
+        if self._client:
+            await self._client.aclose()
+            self._client = None
 
 
 # Singleton instance
