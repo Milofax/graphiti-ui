@@ -163,13 +163,13 @@ export function ForceGraphVisualization({
     return isDark ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.2)';
   }, [highlightedEdges, isDark]);
 
-  // 3D link color (less transparent for better visibility)
+  // 3D link color (increased opacity for better visibility)
   const getLinkColor3D = useCallback((link: GraphEdge) => {
     const idx = typeof link.index === 'number' ? link.index : -1;
     if (highlightedEdges.has(idx)) {
-      return 'rgba(255,171,0,0.85)'; // More opaque in 3D for better visibility
+      return 'rgba(255,171,0,0.9)'; // Highlighted edges
     }
-    return isDark ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.4)';
+    return isDark ? 'rgba(255,255,255,0.7)' : 'rgba(0,0,0,0.55)';
   }, [highlightedEdges, isDark]);
 
   // Particle color - full yellow for highlighted edges
@@ -178,12 +178,12 @@ export function ForceGraphVisualization({
     if (highlightedEdges.has(idx)) {
       return '#ffab00'; // Full highlight color for visibility
     }
-    return isDark ? 'rgba(255,255,255,0.4)' : 'rgba(0,0,0,0.4)';
+    return isDark ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.5)';
   }, [highlightedEdges, isDark]);
 
   const getLinkWidth = useCallback((link: GraphEdge) => {
     const idx = typeof link.index === 'number' ? link.index : -1;
-    return highlightedEdges.has(idx) ? 3 : 1;
+    return highlightedEdges.has(idx) ? 3.5 : 1.5;
   }, [highlightedEdges]);
 
   // Handle container resize
