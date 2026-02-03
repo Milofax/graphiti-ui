@@ -104,27 +104,15 @@ class GraphitiClient:
             return {"success": False, "nodes": [], "edges": [], "error": str(e)}
 
     async def _get_single_graph_data(self, group_id: str, limit: int) -> dict:
-        """Get data from a single graph."""
-        driver = self._get_driver(group_id)
+        """Get data from a single graph using Graphiti methods (DB-neutral)."""
+        graphiti = self._get_graphiti(group_id)
 
-        # Query nodes
-        nodes_query = """
-        MATCH (n:Entity)
-        RETURN n, labels(n) AS labels
-        LIMIT $limit
-        """
-        nodes_result, _, _ = await driver.execute_query(nodes_query, limit=limit)
+        # Use Graphiti methods instead of raw Cypher
+        entities = await graphiti.get_entities_by_group_id(group_id, limit=limit)
+        edges = await graphiti.get_edges_by_group_id(group_id, limit=limit)
 
-        # Query edges
-        edges_query = """
-        MATCH (a:Entity)-[r:RELATES_TO]->(b:Entity)
-        RETURN a.uuid AS source, b.uuid AS target, r
-        LIMIT $limit
-        """
-        edges_result, _, _ = await driver.execute_query(edges_query, limit=limit)
-
-        nodes = self._transform_nodes(nodes_result, group_id)
-        edges = self._transform_edges(edges_result, group_id)
+        nodes = self._transform_entity_nodes(entities, group_id)
+        edges = self._transform_entity_edges(edges, group_id)
 
         return {"success": True, "nodes": nodes, "edges": edges}
 
@@ -163,57 +151,54 @@ class GraphitiClient:
 
         return {"success": True, "nodes": all_nodes, "edges": all_edges}
 
-    def _transform_nodes(self, nodes_result: list, group_id: str) -> list:
-        """Transform node query results."""
+    def _transform_entity_nodes(self, entities: list, group_id: str) -> list:
+        """Transform EntityNode objects to visualization format."""
+        from graphiti_core.nodes import EntityNode
+
         nodes = []
-        for record in nodes_result:
-            node_obj = record.get("n")
-            labels = record.get("labels", [])
+        for entity in entities:
+            if not isinstance(entity, EntityNode):
+                continue
+
+            labels = list(entity.labels) if entity.labels else []
             if "Entity" in labels:
                 labels = [l for l in labels if l != "Entity"]
 
-            props = node_obj.properties if hasattr(node_obj, "properties") else (node_obj or {})
-
-            standard_props = {"uuid", "name", "summary", "group_id", "created_at",
-                              "name_embedding", "summary_embedding", "labels"}
-            attributes = {
-                k: v for k, v in props.items()
-                if k not in standard_props and not k.endswith("_embedding")
-            }
-
             nodes.append({
-                "id": props.get("uuid"),
-                "uuid": props.get("uuid"),
-                "name": props.get("name"),
-                "summary": props.get("summary", ""),
-                "group_id": props.get("group_id", group_id),
-                "created_at": props.get("created_at"),
+                "id": entity.uuid,
+                "uuid": entity.uuid,
+                "name": entity.name,
+                "summary": entity.summary or "",
+                "group_id": entity.group_id or group_id,
+                "created_at": entity.created_at.isoformat() if entity.created_at else None,
                 "labels": labels,
                 "type": labels[0] if labels else "Entity",
-                "attributes": attributes,
+                "attributes": entity.attributes or {},
             })
         return nodes
 
-    def _transform_edges(self, edges_result: list, group_id: str) -> list:
-        """Transform edge query results."""
-        edges = []
-        for record in edges_result:
-            rel_obj = record.get("r")
-            props = rel_obj.properties if hasattr(rel_obj, "properties") else (rel_obj or {})
+    def _transform_entity_edges(self, edges: list, group_id: str) -> list:
+        """Transform EntityEdge objects to visualization format."""
+        from graphiti_core.edges import EntityEdge
 
-            edges.append({
-                "uuid": props.get("uuid", ""),
-                "source": record["source"],
-                "target": record["target"],
-                "name": props.get("name", ""),
-                "fact": props.get("fact", ""),
-                "group_id": props.get("group_id", group_id),
-                "created_at": props.get("created_at", ""),
-                "valid_at": props.get("valid_at"),
-                "expired_at": props.get("expired_at"),
-                "episodes": props.get("episodes", []),
+        result = []
+        for edge in edges:
+            if not isinstance(edge, EntityEdge):
+                continue
+
+            result.append({
+                "uuid": edge.uuid,
+                "source": edge.source_node_uuid,
+                "target": edge.target_node_uuid,
+                "name": edge.name or "",
+                "fact": edge.fact or "",
+                "group_id": edge.group_id or group_id,
+                "created_at": edge.created_at.isoformat() if edge.created_at else "",
+                "valid_at": edge.valid_at.isoformat() if edge.valid_at else None,
+                "expired_at": edge.invalid_at.isoformat() if edge.invalid_at else None,
+                "episodes": edge.episodes or [],
             })
-        return edges
+        return result
 
     async def get_group_ids(self) -> dict:
         """Get all available group IDs from MCP server.
