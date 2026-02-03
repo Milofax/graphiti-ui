@@ -76,10 +76,13 @@ class GraphitiClient:
     # =========================================================================
 
     async def health_check(self) -> dict:
-        """Check if FalkorDB is healthy."""
+        """Check if MCP server (and its DB connection) is healthy."""
         try:
-            await self.driver.health_check()
-            return {"healthy": True, "data": {"status": "healthy", "service": "graphiti-ui"}}
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                response = await client.get(f"{self.settings.graphiti_mcp_url}/health")
+                response.raise_for_status()
+                data = response.json()
+                return {"healthy": True, "data": data}
         except Exception as e:
             return {"healthy": False, "error": str(e)}
 
