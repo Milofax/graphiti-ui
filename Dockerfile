@@ -47,7 +47,7 @@ COPY pyproject.toml README.md ./
 COPY src/ ./src/
 
 # Install graphiti-core from GitHub fork, then UI dependencies
-RUN uv pip install --system --no-cache "graphiti-core[falkordb] @ git+https://github.com/Brusdeylins/graphiti.git@main" && \
+RUN uv pip install --system --no-cache "graphiti-core[falkordb] @ git+https://github.com/Milofax/graphiti.git@main" && \
     uv pip install --system --no-cache .
 
 # Copy built frontend from builder stage
