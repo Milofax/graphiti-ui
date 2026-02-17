@@ -116,8 +116,9 @@ class GraphitiClient:
         graphiti = self._get_graphiti(group_id)
 
         # Use Graphiti methods instead of raw Cypher
-        entities = await graphiti.get_entities_by_group_id(group_id, limit=limit)
-        edges = await graphiti.get_edges_by_group_id(group_id, limit=limit)
+        # Use lightweight=True to exclude embedding vectors for better performance
+        entities = await graphiti.get_entities_by_group_id(group_id, limit=limit, lightweight=True)
+        edges = await graphiti.get_edges_by_group_id(group_id, limit=limit, lightweight=True)
 
         nodes = self._transform_entity_nodes(entities, group_id)
         edges = self._transform_entity_edges(edges, group_id)
